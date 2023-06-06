@@ -1,2 +1,3 @@
-# gpg-import
-Import your GPG key within your CI workflow
+# GPG Import
+
+Easily import your GPG key within your CI workflow.
