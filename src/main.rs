@@ -143,7 +143,7 @@ fn import_secret_key(key: &str) -> Result<String, Box<dyn std::error::Error>> {
         .spawn()?;
 
     gpg_import_info.stdin.unwrap().write_all(&decoded)?;
-    let mut s = String::new();
+    let mut s = String::default();
     gpg_import_info
         .stderr
         .unwrap()
@@ -171,9 +171,11 @@ fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey, Box<dyn std::error::E
     Ok(key_details)
 }
 
+static GPG_PRIVATE_KEY: &str = "GPG_PRIVATE_KEY";
+
 fn main() {
     let gpg_private_key =
-        env::var("GPG_PRIVATE_KEY").expect("env variable GPG_PRIVATE_KEY must bet set");
+        env::var(GPG_PRIVATE_KEY).expect(&format!("env variable {} must bet set", GPG_PRIVATE_KEY));
 
     let info = detect_gpg_version().unwrap();
     println!("gpg:     {} (libgcrypt: {})", info.version, info.libgcrypt);
