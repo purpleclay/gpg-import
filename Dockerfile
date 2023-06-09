@@ -4,6 +4,11 @@ FROM rust:1.70.0-alpine3.18 AS builder
 WORKDIR /app
 COPY . /app
 
+RUN <<EOF
+set -eux
+apk add --no-cache musl-dev
+EOF
+
 RUN --mount=type=cache,target=/root/.rustup \
     --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/root/.cargo/git \

@@ -1,7 +1,6 @@
-extern crate exitcode;
-
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{TimeZone, Utc};
+use git2::Repository;
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
@@ -11,7 +10,7 @@ use nom::{
     sequence::{pair, separated_pair, tuple},
     Finish, IResult,
 };
-use std::{env, io::Read, println, process::exit, process::Command, str::FromStr};
+use std::{env, io::Read, println, process::Command, str::FromStr};
 use std::{io::Write, process::Stdio};
 
 fn parse_gpg_info(input: &str) -> IResult<&str, GpgInfo> {
@@ -57,12 +56,13 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
         tag("uid"),
         count(pair(take_until(":"), tag(":")), 9),
     ))(i)?;
-    let (i, uid) = take_until(":")(i)?;
+    let (i, uid) = separated_pair(take_until(" "), tag(" "), take_until(":"))(i)?;
 
     Ok((
         i,
         GpgPrivateKey {
-            user: uid.into(),
+            user_name: uid.0.into(),
+            user_email: uid.1[1..uid.1.len() - 1].into(),
             secret_key: GpgKeyDetails {
                 creation_date: sec[1].0.parse::<i64>().unwrap(),
                 expiration_date: if sec[2].0.is_empty() {
@@ -99,7 +99,8 @@ impl FromStr for GpgInfo {
 }
 
 struct GpgPrivateKey {
-    user: String,
+    user_name: String,
+    user_email: String,
     secret_key: GpgKeyDetails,
 }
 
@@ -172,32 +173,69 @@ fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey, Box<dyn std::error::E
 }
 
 static GPG_PRIVATE_KEY: &str = "GPG_PRIVATE_KEY";
+static GIT_USER_NAME: &str = "user.name";
+static GIT_USER_EMAIL: &str = "user.email";
+static GIT_USER_SIGNINGKEY: &str = "user.signingKey";
+static GIT_COMMIT_GPGSIGN: &str = "commit.gpgsign";
+static GIT_TAG_GPGSIGN: &str = "tag.gpgsign";
+static GIT_PUSH_GPGSIGN: &str = "push.gpgsign";
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gpg_private_key = env::var(GPG_PRIVATE_KEY)
         .unwrap_or_else(|_| panic!("env variable {} must bet set", GPG_PRIVATE_KEY));
 
-    let info = detect_gpg_version().unwrap();
-    println!("gpg:     {} (libgcrypt: {})", info.version, info.libgcrypt);
-    println!("homedir: {}", info.home_dir);
+    let info = detect_gpg_version()?;
+    println!(
+        "gpg_version:  {} (libgcrypt: {})",
+        info.version, info.libgcrypt
+    );
+    println!("homedir:      {}", info.home_dir);
 
-    let key_id = import_secret_key(&gpg_private_key).unwrap();
-    let private_key = extract_key_info(&key_id).unwrap();
+    let key_id = import_secret_key(&gpg_private_key)?;
+    let private_key = extract_key_info(&key_id)?;
     println!();
-    println!("fingerprint: {}", private_key.secret_key.fingerprint);
-    println!("keygrip:     {}", private_key.secret_key.keygrip);
-    println!("key id:      {}", private_key.secret_key.key_id);
-    println!("user:        {}", private_key.user);
+    println!("fingerprint:  {}", private_key.secret_key.fingerprint);
+    println!("keygrip:      {}", private_key.secret_key.keygrip);
+    println!("key_id:       {}", private_key.secret_key.key_id);
+    println!(
+        "user:         {} <{}>",
+        private_key.user_name, private_key.user_email
+    );
     let ct = Utc
         .timestamp_opt(private_key.secret_key.creation_date, 0)
         .unwrap();
-    println!("created on:  {}", ct.to_rfc2822());
+    println!("created_on:   {}", ct.to_rfc2822());
     if private_key.secret_key.expiration_date.is_some() {
         let et = Utc
             .timestamp_opt(private_key.secret_key.expiration_date.unwrap(), 0)
             .unwrap();
-        println!("expires on:  {}", et.to_rfc2822());
+        println!("expires_on:   {}", et.to_rfc2822());
     }
 
-    exit(exitcode::OK)
+    let repo = match Repository::open(".") {
+        Ok(r) => Some(r),
+        Err(_) => None,
+    };
+    if let Some(r) = repo {
+        let mut config = r.config()?;
+
+        config.set_str(GIT_USER_NAME, &private_key.user_name)?;
+        config.set_str(GIT_USER_EMAIL, &private_key.user_email)?;
+        config.set_str(GIT_USER_SIGNINGKEY, &private_key.secret_key.key_id)?;
+        config.set_bool(GIT_COMMIT_GPGSIGN, true)?;
+        config.set_bool(GIT_TAG_GPGSIGN, true)?;
+        config.set_str(GIT_PUSH_GPGSIGN, "if-asked")?;
+
+        println!();
+        println!("signing_key:  {}", private_key.secret_key.key_id);
+        println!(
+            "signing_user: {} <{}>",
+            private_key.user_name, private_key.user_email
+        );
+        println!("sign_tags:    true");
+        println!("sign_commits: true");
+        println!("sign_pushes:  if-asked")
+    }
+
+    Ok(())
 }
