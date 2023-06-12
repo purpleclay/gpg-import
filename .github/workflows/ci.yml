@@ -79,8 +79,8 @@ jobs:
         platform:
           - name: linux_x86_64
             target: x86_64-unknown-linux-musl
-          - name: macos_x86_64
-            target: x86_64-apple-darwin
+          # - name: macos_x86_64
+          #   target: x86_64-apple-darwin
           - name: windows_x86_64
             taget: x86_64-pc-windows-msvc
     steps:
