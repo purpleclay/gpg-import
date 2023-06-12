@@ -94,7 +94,7 @@ jobs:
 
       - name: Install musl-tools on Linux
         run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
-        if: contains(matrix.platform.name, 'musl')
+        if: contains(matrix.platform.target, 'musl')
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
@@ -104,4 +104,4 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --target ${{ matrix.platform.target }}
+          args: --locked --release --target ${{ matrix.platform.target }}
