@@ -33,17 +33,15 @@ permissions:
 jobs:
   rustfmt:
     runs-on: ubuntu-latest
-    name: cargo fmt (stable)
+    name: rustfmt / stable
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Install stable
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-            toolchain: stable
-            components: rustfmt
-            override: true
+          components: rustfmt
 
       - name: Cargo Format
         uses: actions-rs/cargo@v1
@@ -53,7 +51,7 @@ jobs:
 
   clippy:
       runs-on: ubuntu-latest
-      name: ${{ matrix.toolchain }} / clippy
+      name: clippy / ${{ matrix.toolchain }}
       strategy:
         fail-fast: false
         matrix:
@@ -63,13 +61,43 @@ jobs:
           uses: actions/checkout@v3
 
         - name: Install ${{ matrix.toolchain }}
-          uses: actions-rs/toolchain@v1
+          uses: dtolnay/rust-toolchain@master
           with:
-              toolchain: ${{ matrix.toolchain }}
-              components: clippy
-              override: true
+            toolchain: ${{ matrix.toolchain }}
+            components: clippy
 
         - name: Cargo Clippy
           uses: actions-rs/cargo@v1
           with:
             command: clippy
+
+  build:
+    runs-on: ubuntu-latest
+    name: build / ${{ matrix.platform.name }}
+    strategy:
+      matrix:
+        platform:
+          - name: linux_x86_64
+            target: x86_64-unknown-linux-musl
+          - name: macos_x86_64
+            target: x86_64-apple-darwin
+          - name: windows_x86_64
+            taget: x86_64-pc-windows-msvc
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --target ${{ matrix.platform.target }}
