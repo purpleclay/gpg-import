@@ -81,8 +81,8 @@ jobs:
             target: x86_64-unknown-linux-musl
           # - name: macos_x86_64
           #   target: x86_64-apple-darwin
-          - name: windows_x86_64
-            taget: x86_64-pc-windows-msvc
+          # - name: windows_x86_64
+          #   taget: x86_64-pc-windows-msvc
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -91,6 +91,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform.target }}
+
+      - name: Install musl-tools on Linux
+        run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
+        if: contains(matrix.platform.name, 'musl')
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
