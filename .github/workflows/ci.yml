@@ -85,10 +85,14 @@ jobs:
             runs-on: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             use-cross: true
-          - name: darwin_x86_64
-            runs-on: macos-latest
-            target: x86_64-apple-darwin
-            use-cross: false
+          - name: linux_aarch64_musl
+            runs-on: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            use-cross: true
+          - name: linux_aarch64_gnu
+            runs-on: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            use-cross: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
