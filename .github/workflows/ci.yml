@@ -72,19 +72,23 @@ jobs:
             command: clippy
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform.runs-on }}
     name: build / ${{ matrix.platform.name }}
     strategy:
       matrix:
         platform:
-          - name: linux_x86_64
+          - name: linux_x86_64_musl
+            runs-on: ubuntu-latest
             target: x86_64-unknown-linux-musl
             use-cross: true
-          - name: macos_x86_64
+          - name: linux_x86_64_gnu
+            runs-on: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            use-cross: true
+          - name: darwin_x86_64
+            runs-on: macos-latest
             target: x86_64-apple-darwin
             use-cross: false
-          # - name: windows_x86_64
-          #   taget: x86_64-pc-windows-msvc
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -94,16 +98,12 @@ jobs:
         with:
           targets: ${{ matrix.platform.target }}
 
-      - name: Install musl-tools
-        if: endsWith(matrix.platform.target, 'musl')
-        run: sudo apt-get install --yes musl-tools
-
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
       - name: Build
         uses: actions-rs/cargo@v1
         with:
-          use-cross: true
+          use-cross: ${{ matrix.platform.use-cross }}
           command: build
           args: --locked --release --target ${{ matrix.platform.target }}
