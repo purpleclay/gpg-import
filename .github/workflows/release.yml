@@ -18,62 +18,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-name: ci
+name: release
 on:
   push:
-    branches:
-      - main
-  pull_request:
-      branches:
-        - main
-
-permissions:
-  contents: read
+    tags:
+      - "*.*.*"
 
 jobs:
-  rustfmt:
-    runs-on: ubuntu-latest
-    name: rustfmt / stable
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Cargo Format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --check
-
-  clippy:
-      runs-on: ubuntu-latest
-      name: clippy / ${{ matrix.toolchain }}
-      strategy:
-        fail-fast: false
-        matrix:
-          toolchain: [stable, beta]
-      steps:
-        - name: Checkout repository
-          uses: actions/checkout@v3
-
-        - name: Install ${{ matrix.toolchain }}
-          uses: dtolnay/rust-toolchain@master
-          with:
-            toolchain: ${{ matrix.toolchain }}
-            components: clippy
-
-        - name: Cargo Clippy
-          uses: actions-rs/cargo@v1
-          with:
-            command: clippy
-
-  build:
+  release:
     runs-on: ${{ matrix.platform.runs-on }}
-    name: build / ${{ matrix.platform.name }}
+    name: release / ${{ matrix.platform.name }}
     strategy:
       matrix:
         platform:
