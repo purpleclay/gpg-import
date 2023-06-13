@@ -119,11 +119,11 @@ jobs:
           # TODO: include version number within package
           PKG_NAME=gpg-import-${{ matrix.platform.target }}.tar.gz
           PKG_DIR=archive/gpg-import
-          mkdir -p $PACKAGE_DIR
-          cp target/${{ matrix.platform.target }}/release/gpg-import $PACKAGE_DIR/
-          cp README.md LICENSE $PACKAGE_DIR/
+          mkdir -p $PKG_DIR
+          cp target/${{ matrix.platform.target }}/release/gpg-import $PKG_DIR/
+          cp README.md LICENSE $PKG_DIR/
 
-          pushd $PACKAGE_DIR
+          pushd $PKG_DIR
           tar czf "${PKG_NAME}" "*"
           popd
 
