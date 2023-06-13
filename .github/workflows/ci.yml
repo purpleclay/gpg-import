@@ -123,7 +123,11 @@ jobs:
           cp target/${{ matrix.platform.target }}/release/gpg-import $PKG_DIR/
           cp README.md LICENSE $PKG_DIR/
 
+          ls -lR $PKG_DIR
+
           pushd $PKG_DIR
+          pwd
+          ls -lR *
           tar czf "${PKG_NAME}" "*"
           popd
 
