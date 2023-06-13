@@ -125,6 +125,7 @@ jobs:
 
           pushd $PKG_DIR >/dev/null
           tar czf "${PKG_NAME}" *
+          tar tvf ${PKG_NAME}
           popd >/dev/null
 
           # Output path to archive for future upload
