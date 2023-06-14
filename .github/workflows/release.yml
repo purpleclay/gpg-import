@@ -25,9 +25,9 @@ on:
       - "*.*.*"
 
 jobs:
-  release:
+  build:
     runs-on: ${{ matrix.platform.runs-on }}
-    name: release / ${{ matrix.platform.name }}
+    name: build / ${{ matrix.platform.name }}
     strategy:
       matrix:
         platform:
@@ -70,16 +70,15 @@ jobs:
         id: archive
         shell: bash
         run: |
-          # TODO: include version number within package
-          PKG_NAME=gpg-import-${{ matrix.platform.target }}.tar.gz
+          PKG_NAME=gpg-import-${{ github.ref_name }}-${{ matrix.platform.target }}.tar.gz
           PKG_DIR=archive/gpg-import
-          mkdir -p $PACKAGE_DIR
-          cp target/${{ matrix.platform.target }}/release/gpg-import $PACKAGE_DIR/
-          cp README.md LICENSE $PACKAGE_DIR/
+          mkdir -p $PKG_DIR
+          cp target/${{ matrix.platform.target }}/release/gpg-import $PKG_DIR/
+          cp README.md LICENSE $PKG_DIR/
 
-          pushd $PACKAGE_DIR
-          tar czf "${PKG_NAME}" "*"
-          popd
+          pushd $PKG_DIR >/dev/null
+          tar czf "${PKG_NAME}" *
+          popd >/dev/null
 
           # Output path to archive for future upload
           echo "archive-name=${PKG_NAME}" >> $GITHUB_OUTPUT
@@ -90,3 +89,41 @@ jobs:
         with:
           name: ${{ steps.archive.outputs.archive-name }}
           path: ${{ steps.archive.outputs.archive-path }}
+
+  release:
+    runs-on: ubuntu-latest
+    name: release
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Get previous tag
+        id: tag
+        run: |
+          name=$(git --no-pager tag --sort=creatordate --merged ${{ github.ref_name }} | tail -2 | head -1)
+          echo "previous-tag=$name" >> $GITHUB_ENV
+
+      - name: Download Archives
+        id: download
+        uses: actions/download-artifact@v3
+        with:
+          path: ~/archives
+
+      - name: Generate Changelog
+        id: changelog
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fromTag: ${{ github.ref_name }}
+          toTag: ${{ env.previous-tag }}
+          writeToFile: false
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "${{ steps.download.outputs.download-path }}/*"
+          makeLatest: true
+          name: ${{ github.ref_name }}
+          body: ${{ steps.changelog.output.changes }}
+          token: ${{ secrets.GITHUB_TOKEN }}
