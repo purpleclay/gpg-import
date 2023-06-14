@@ -18,59 +18,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-name: ci
+name: release
 on:
   push:
-    branches:
-      - main
-  pull_request:
-      branches:
-        - main
-
-permissions:
-  contents: read
+    tags:
+      - "*.*.*"
 
 jobs:
-  rustfmt:
-    runs-on: ubuntu-latest
-    name: rustfmt / stable
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Cargo Format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --check
-
-  clippy:
-      runs-on: ubuntu-latest
-      name: clippy / ${{ matrix.toolchain }}
-      strategy:
-        fail-fast: false
-        matrix:
-          toolchain: [stable, beta]
-      steps:
-        - name: Checkout repository
-          uses: actions/checkout@v3
-
-        - name: Install ${{ matrix.toolchain }}
-          uses: dtolnay/rust-toolchain@master
-          with:
-            toolchain: ${{ matrix.toolchain }}
-            components: clippy
-
-        - name: Cargo Clippy
-          uses: actions-rs/cargo@v1
-          with:
-            command: clippy
-
   build:
     runs-on: ${{ matrix.platform.runs-on }}
     name: build / ${{ matrix.platform.name }}
@@ -97,12 +51,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Get previous tag
-        id: tag
-        run: |
-          name=$(git --no-pager tag --sort=creatordate --merged ${{ github.ref_name }} | tail -2 | head -1)
-          echo "previous-tag=$name" >> $GITHUB_ENV
-
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -117,3 +65,65 @@ jobs:
           use-cross: ${{ matrix.platform.use-cross }}
           command: build
           args: --locked --release --target ${{ matrix.platform.target }}
+
+      - name: Archive
+        id: archive
+        shell: bash
+        run: |
+          PKG_NAME=gpg-import-${{ github.ref_name }}-${{ matrix.platform.target }}.tar.gz
+          PKG_DIR=archive/gpg-import
+          mkdir -p $PKG_DIR
+          cp target/${{ matrix.platform.target }}/release/gpg-import $PKG_DIR/
+          cp README.md LICENSE $PKG_DIR/
+
+          pushd $PKG_DIR >/dev/null
+          tar czf "${PKG_NAME}" *
+          popd >/dev/null
+
+          # Output path to archive for future upload
+          echo "archive-name=${PKG_NAME}" >> $GITHUB_OUTPUT
+          echo "archive-path=${PKG_DIR}/${PKG_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Upload Archive
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.archive.outputs.archive-name }}
+          path: ${{ steps.archive.outputs.archive-path }}
+
+  release:
+    runs-on: ubuntu-latest
+    name: release
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Get previous tag
+        id: tag
+        run: |
+          name=$(git --no-pager tag --sort=creatordate --merged ${{ github.ref_name }} | tail -2 | head -1)
+          echo "previous-tag=$name" >> $GITHUB_ENV
+
+      - name: Download Archives
+        id: download
+        uses: actions/download-artifact@v3
+        with:
+          path: ~/archives
+
+      - name: Generate Changelog
+        id: changelog
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fromTag: ${{ github.ref_name }}
+          toTag: ${{ env.previous-tag }}
+          writeToFile: false
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "${{ steps.download.outputs.download-path }}/*"
+          makeLatest: true
+          name: ${{ github.ref_name }}
+          body: ${{ steps.changelog.output.changes }}
+          token: ${{ secrets.GITHUB_TOKEN }}
