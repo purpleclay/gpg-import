@@ -3,14 +3,20 @@ use std::fmt::{self, Display};
 use git2::{Error, Repository};
 
 /// Git GPG signing configuration that will written to the local
-// .git/config of the repository
+/// .git/config of the repository
 #[derive(Debug)]
 pub struct SigningConfig {
+    /// User name associated with the signing key, maps to user.name
     pub user_name: String,
+    /// User email associated with the signing key, maps to user.email
     pub user_email: String,
+    /// The shortform ID of the signing key, maps to user.signingKey
     pub key_id: String,
+    /// A flag to enable GPG signing of commits, maps to commit.gpgsign
     pub commit_sign: bool,
+    /// A flag to enable GPG signing of tags, maps to tag.gpgsign
     pub tag_sign: bool,
+    /// A flag to enable GPG signing of pushes, maps to push.gpgsign
     pub push_sign: bool,
 }
 
