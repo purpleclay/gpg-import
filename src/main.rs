@@ -1,17 +1,28 @@
+use clap::{command, Parser};
 use gpg_import::{git, gpg};
-use std::{env, println};
+use std::println;
 
-static GPG_PRIVATE_KEY: &str = "GPG_PRIVATE_KEY";
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// A base64 encoded GPG private key in armored format
+    #[arg(
+        short,
+        long,
+        env = "GPG_PRIVATE_KEY",
+        value_name = "BASE64_ARMORED_KEY"
+    )]
+    key: String,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let gpg_private_key = env::var(GPG_PRIVATE_KEY)
-        .unwrap_or_else(|_| panic!("env variable {} must bet set", GPG_PRIVATE_KEY));
+    let args = Args::parse();
 
     let info = gpg::detect_version()?;
     println!("> Detected GnuPG:");
     println!("{}", info);
 
-    let key_id = gpg::import_secret_key(&gpg_private_key)?;
+    let key_id = gpg::import_secret_key(&args.key)?;
     let private_key = gpg::extract_key_info(&key_id)?;
     println!("> Imported GPG key:");
     println!("{}", private_key);

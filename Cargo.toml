@@ -1,5 +1,6 @@
 [package]
 authors = ["Purple Clay <purpleclaygh@gmail.com>"]
+description = "Easily import your GPG key within your CI workflow"
 name = "gpg-import"
 edition = "2021"
 license = "MIT"
@@ -8,5 +9,6 @@ version = "0.1.0"
 [dependencies]
 base64 = "0.21.1"
 chrono = { version = "0.4.24", default-features = false, features = ["std"] }
+clap = { version = "4.3.4", features = ["derive", "env"] }
 git2 = { version = "0.17.2", default-features = false }
 nom = "7.1.3"
