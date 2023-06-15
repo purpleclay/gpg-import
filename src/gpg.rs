@@ -20,8 +20,11 @@ use std::{io::Write, process::Stdio};
 /// Provides details about the installed GPG client
 #[derive(Debug)]
 pub struct GpgInfo {
+    /// The GnuPG version
     pub version: String,
+    /// The version of libgcrypt used by GnuPG
     pub libgcrypt: String,
+    /// The home directory, where configuration files are stored
     pub home_dir: String,
 }
 
@@ -90,18 +93,26 @@ pub fn detect_version() -> Result<GpgInfo, Box<dyn std::error::Error>> {
 /// A GPG private key
 #[derive(Debug)]
 pub struct GpgPrivateKey {
+    /// The user name associated with the private key
     pub user_name: String,
+    /// The user email associated with the private key
     pub user_email: String,
+    /// Internal details of the private key
     pub secret_key: GpgKeyDetails,
 }
 
 /// Contains internal details of a GPG private key
 #[derive(Debug)]
 pub struct GpgKeyDetails {
+    /// The date of when the private key was generated
     pub creation_date: i64,
+    /// The date for when the private key will expire
     pub expiration_date: Option<i64>,
+    /// A fingerprint used for verification of the private key
     pub fingerprint: String,
+    /// An 8 digit hexadecimal identifier for the private key
     pub key_id: String,
+    /// A 20-byte hash identifier for the private key
     pub keygrip: String,
 }
 
