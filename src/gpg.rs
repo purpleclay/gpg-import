@@ -17,6 +17,7 @@ use std::{
 };
 use std::{io::Write, process::Stdio};
 
+/// Provides details about the installed GPG client
 #[derive(Debug)]
 pub struct GpgInfo {
     pub version: String,
@@ -75,6 +76,8 @@ fn parse_gpg_info(input: &str) -> IResult<&str, GpgInfo> {
     ))
 }
 
+/// Inspects the OS for a GPG client and retrieves details about the
+/// currently installed version
 pub fn detect_version() -> Result<GpgInfo, Box<dyn std::error::Error>> {
     let gpg_details = Command::new("gpg").arg("--version").output()?;
 
@@ -84,6 +87,7 @@ pub fn detect_version() -> Result<GpgInfo, Box<dyn std::error::Error>> {
     Ok(gpg_info)
 }
 
+/// A GPG private key
 #[derive(Debug)]
 pub struct GpgPrivateKey {
     pub user_name: String,
@@ -91,6 +95,7 @@ pub struct GpgPrivateKey {
     pub secret_key: GpgKeyDetails,
 }
 
+/// Contains internal details of a GPG private key
 #[derive(Debug)]
 pub struct GpgKeyDetails {
     pub creation_date: i64,
@@ -174,6 +179,7 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
     ))
 }
 
+/// Attempts to import a GPG private key
 pub fn import_secret_key(key: &str) -> Result<String, Box<dyn std::error::Error>> {
     let decoded = general_purpose::STANDARD.decode(key)?;
     let gpg_import_info = Command::new("gpg")
@@ -194,6 +200,7 @@ pub fn import_secret_key(key: &str) -> Result<String, Box<dyn std::error::Error>
     Ok(key.1)
 }
 
+/// Extracts internal details for a given GPG private key
 pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey, Box<dyn std::error::Error>> {
     let gpg_key_details = Command::new("gpg")
         .args(vec![

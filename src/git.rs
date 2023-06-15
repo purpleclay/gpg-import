@@ -2,6 +2,8 @@ use std::fmt::{self, Display};
 
 use git2::{Error, Repository};
 
+/// Git GPG signing configuration that will written to the local
+// .git/config of the repository
 #[derive(Debug)]
 pub struct SigningConfig {
     pub user_name: String,
@@ -26,6 +28,7 @@ impl Display for SigningConfig {
     }
 }
 
+/// Determines if the current working directory is in fact a git repository
 pub fn is_repo() -> Option<Repository> {
     return match Repository::open(".") {
         Ok(r) => Some(r),
@@ -33,6 +36,8 @@ pub fn is_repo() -> Option<Repository> {
     };
 }
 
+/// Configures the current repository to support GPG signing based on
+/// the provided config
 pub fn configure_signing(repo: &Repository, cfg: &SigningConfig) -> Result<(), Error> {
     let mut config = repo.config()?;
 
