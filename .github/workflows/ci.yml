@@ -161,4 +161,5 @@ jobs:
       - name: Move Archives
         shell: bash
         run: |
-          find ${{ steps.download.outputs.download-path }} -type f -name "*.tar.gz" -exec printf "{}\n" \;
+          mkdir -p ~/archives
+          find ${{ steps.download.outputs.download-path }} -type f -name "*.tar.gz" -exec cp {} ~/archives/ \;
