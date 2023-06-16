@@ -23,9 +23,15 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "src/**"
+      - "Cargo.*"
   pull_request:
-      branches:
-        - main
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "Cargo.*"
 
 permissions:
   contents: read
