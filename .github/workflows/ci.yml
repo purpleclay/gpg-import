@@ -123,3 +123,24 @@ jobs:
           use-cross: ${{ matrix.platform.use-cross }}
           command: build
           args: --locked --release --target ${{ matrix.platform.target }}
+
+  release:
+    runs-on: ubuntu-latest
+    name: release
+    permissions:
+      contents: write
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Download Archives
+        id: download
+        uses: actions/download-artifact@v3
+        with:
+          path: /tmp/archives
+
+      - name: Move Archives
+        shell: bash
+        run: |
+          find ${{ steps.download.outputs.download-path }} -type f -name "*.tar.gz"
