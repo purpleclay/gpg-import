@@ -103,12 +103,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Get previous tag
-        id: tag
-        run: |
-          name=$(git --no-pager tag --sort=creatordate --merged ${{ github.ref_name }} | tail -2 | head -1)
-          echo "previous-tag=$name" >> $GITHUB_ENV
-
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -128,7 +122,7 @@ jobs:
         id: archive
         shell: bash
         run: |
-          PKG_NAME=gpg-import-${{ github.ref_name }}-${{ matrix.platform.target }}.tar.gz
+          PKG_NAME=gpg-import-${{ matrix.platform.target }}.tar.gz
           PKG_DIR=archive/gpg-import
           mkdir -p $PKG_DIR
           cp target/${{ matrix.platform.target }}/release/gpg-import $PKG_DIR/
