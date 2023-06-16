@@ -29,9 +29,9 @@ on:
   pull_request:
     branches:
       - main
-    # paths:
-    #   - "src/**"
-    #   - "Cargo.*"
+    paths:
+      - "src/**"
+      - "Cargo.*"
 
 permissions:
   contents: read
@@ -103,6 +103,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Get previous tag
+        id: tag
+        run: |
+          name=$(git --no-pager tag --sort=creatordate --merged ${{ github.ref_name }} | tail -2 | head -1)
+          echo "previous-tag=$name" >> $GITHUB_ENV
+
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -117,49 +123,3 @@ jobs:
           use-cross: ${{ matrix.platform.use-cross }}
           command: build
           args: --locked --release --target ${{ matrix.platform.target }}
-
-      - name: Archive
-        id: archive
-        shell: bash
-        run: |
-          PKG_NAME=gpg-import-${{ matrix.platform.target }}.tar.gz
-          PKG_DIR=archive/gpg-import
-          mkdir -p $PKG_DIR
-          cp target/${{ matrix.platform.target }}/release/gpg-import $PKG_DIR/
-          cp README.md LICENSE $PKG_DIR/
-
-          pushd $PKG_DIR >/dev/null
-          tar czf "${PKG_NAME}" *
-          popd >/dev/null
-
-          # Output path to archive for future upload
-          echo "archive-name=${PKG_NAME}" >> $GITHUB_OUTPUT
-          echo "archive-path=${PKG_DIR}/${PKG_NAME}" >> $GITHUB_OUTPUT
-
-      - name: Upload Archive
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ steps.archive.outputs.archive-name }}
-          path: ${{ steps.archive.outputs.archive-path }}
-
-  release:
-    runs-on: ubuntu-latest
-    name: release
-    permissions:
-      contents: write
-    needs: build
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Download Archives
-        id: download
-        uses: actions/download-artifact@v3
-        with:
-          path: /tmp/archives
-
-      - name: Move Archives
-        shell: bash
-        run: |
-          mkdir -p ~/archives
-          find ${{ steps.download.outputs.download-path }} -type f -name "*.tar.gz" -exec cp {} ~/archives/ \;
