@@ -100,32 +100,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Get previous tag
-        id: tag
-        run: |
-          name=$(git --no-pager tag --sort=creatordate --merged ${{ github.ref_name }} | tail -2 | head -1)
-          echo "previous-tag=$name" >> $GITHUB_ENV
-
       - name: Download Archives
         id: download
         uses: actions/download-artifact@v3
         with:
-          path: ~/archives
+          path: /tmp/archives
 
-      - name: Generate Changelog
-        id: changelog
-        uses: requarks/changelog-action@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fromTag: ${{ github.ref_name }}
-          toTag: ${{ env.previous-tag }}
-          writeToFile: false
+      - name: Move Archives
+        shell: bash
+        run: |
+          mkdir -p ~/archives
+          find ${{ steps.download.outputs.download-path }} -type f -name "*.tar.gz" -exec cp {} ~/archives/ \;
 
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "${{ steps.download.outputs.download-path }}/*"
+          artifacts: "~/archives/*"
           makeLatest: true
           name: ${{ github.ref_name }}
-          body: ${{ steps.changelog.output.changes }}
           token: ${{ secrets.GITHUB_TOKEN }}
