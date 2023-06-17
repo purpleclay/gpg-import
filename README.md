@@ -6,6 +6,22 @@ Easily import a GPG key within any CI workflow.
 
 - Configures local git config (`.git/config`) within a detected repository, syncing committer details and enabling GPG signing of commits, tags, and pushes.
 
+## Install
+
+To install the latest version using a bash script:
+
+```sh
+curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install \
+  | bash
+```
+
+Download a specific version using the `-v` flag. The script uses `sudo` by default but can be disabled through the `--no-sudo` flag.
+
+```sh
+curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install \
+  | bash -s -- -v 0.1.0 --no-sudo
+```
+
 ## Prerequisites
 
 [Generate](https://docs.github.com/en/authentication/managing-commit-signature-verification/generating-a-new-gpg-key) a GPG key and export it to your clipboard as a base64 encoded ASCII armored private key:
