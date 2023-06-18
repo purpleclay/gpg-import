@@ -33,8 +33,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !args.skip_git {
         if let Some(repo) = git::is_repo() {
-            // TODO: determine if git integration should be skipped or not
-
             println!("> Git config set:");
 
             let git_cfg = git::SigningConfig {
