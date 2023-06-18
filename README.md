@@ -4,7 +4,7 @@ Easily import a GPG key within any CI workflow.
 
 ## Features
 
-- Configures local git config (`.git/config`) within a detected repository, syncing committer details and enabling GPG signing of commits, tags, and pushes.
+- Configures local git config (`.git/config`) within a detected repository, syncing committer details and enabling GPG signing of commits, tags, and pushes. Can be skipped with the `GPG_SKIP_GIT=true` environment variable.
 
 ## Install
 
