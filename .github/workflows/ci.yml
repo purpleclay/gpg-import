@@ -84,6 +84,9 @@ jobs:
 
       - name: Run
         run: ./target/debug/gpg-import
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
 
   clippy:
       runs-on: ubuntu-latest
