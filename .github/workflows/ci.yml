@@ -87,6 +87,7 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
+          RUST_BACKTRACE: 1
 
       - name: Sign something
         run: |
