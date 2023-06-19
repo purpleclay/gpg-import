@@ -278,5 +278,8 @@ pub fn preset_passphrase(
         ])
         .output()?;
 
+    Command::new("gpg-connect-agent")
+        .args(vec!["KEYINFO", keygrip, "/bye"])
+        .output()?;
     Ok(())
 }
