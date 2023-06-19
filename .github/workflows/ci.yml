@@ -88,7 +88,7 @@ jobs:
         run: ./target/debug/gpg-import
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
+          # GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
 
       - name: Sign something
         run: |
