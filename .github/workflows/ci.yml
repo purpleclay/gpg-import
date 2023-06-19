@@ -88,6 +88,12 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
 
+      - name: Sign something
+        run: |
+          echo "hello, world!" > a.txt
+          gpg -s a.txt
+          ls -la
+
   clippy:
       runs-on: ubuntu-latest
       name: clippy / ${{ matrix.toolchain }}

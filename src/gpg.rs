@@ -203,7 +203,6 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
         count(pair(take_until(":"), tag(":")), 9),
     ))(i)?;
     let (i, uid) = separated_pair(take_until(" "), tag(" "), take_until(":"))(i)?;
-    let (i, _) = take_till(|c| c == '\n')(i)?;
 
     Ok((
         i,
