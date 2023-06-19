@@ -38,12 +38,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(passphrase) = args.passphrase {
         gpg::configure_agent_defaults(&info.home_dir)?;
         gpg::preset_passphrase(&private_key.secret_key.keygrip, &passphrase)?;
+        // TODO: set for secret subkey
+        gpg::preset_passphrase("A213D84D786B8DBED68195C178B650CD24B88B2D", &passphrase)?;
+        // 2D219DD41933A2D5
 
         println!("> Setting Passphrase:");
         println!(
             "keygrip: {} [{}]",
             private_key.secret_key.keygrip, private_key.secret_key.key_id
         );
+        println!("keygrip: A213D84D786B8DBED68195C178B650CD24B88B2D [2D219DD41933A2D5]");
     }
 
     if !args.skip_git {

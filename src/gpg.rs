@@ -2,8 +2,8 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::{TimeZone, Utc};
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_until},
-    character::streaming::not_line_ending,
+    bytes::complete::{tag, take_till, take_until},
+    character::complete::not_line_ending,
     error::Error,
     multi::count,
     sequence::{pair, separated_pair, tuple},
@@ -120,8 +120,10 @@ pub struct GpgPrivateKey {
     pub user_name: String,
     /// The user email associated with the private key
     pub user_email: String,
-    /// Internal details of the private key
+    /// Internal details of the secret key
     pub secret_key: GpgKeyDetails,
+    // /// Internal details of the secret subkey
+    // pub secret_subkey: GpgKeyDetails,
 }
 
 /// Contains internal details of a GPG private key
@@ -180,6 +182,15 @@ fn parse_gpg_import(input: &str) -> IResult<&str, String> {
 }
 
 fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
+    /*
+    sec:u:4096:1:E5389A1079D5A52F:1683661166:::u:::scESC:::+:::23::0:
+    fpr:::::::::241315DDAB6865162C0389BFE5389A1079D5A52F:
+    grp:::::::::147098685499F4C183A39CA1A51CDE6316DDD479:
+    uid:u::::1683661166::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::batman <batman@dc.com>::::::::::0:
+    ssb:u:4096:1:2D219DD41933A2D5:1683661166::::::e:::+:::23:
+    fpr:::::::::D4A4F422CB1D2412CC4CE9B82D219DD41933A2D5:
+    grp:::::::::A213D84D786B8DBED68195C178B650CD24B88B2D:
+    */
     let (i, _) = tuple((tag("sec"), count(pair(take_until(":"), tag(":")), 4)))(input)?;
     let (i, sec) = count(pair(take_until(":"), tag(":")), 3)(i)?;
     let (i, _) = tuple((take_until("fpr"), tag("fpr"), count(tag(":"), 9)))(i)?;
@@ -192,6 +203,7 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
         count(pair(take_until(":"), tag(":")), 9),
     ))(i)?;
     let (i, uid) = separated_pair(take_until(" "), tag(" "), take_until(":"))(i)?;
+    let (i, _) = take_till(|c| c == '\n')(i)?;
 
     Ok((
         i,
