@@ -52,6 +52,8 @@ jobs:
 
       - name: Sign something
         run: |
+          ls -l /home/runner/.gnupg
+          cat /home/runner/.gnupg/gpg-agent.conf
           echo "hello, world!" > a.txt
           gpg -s a.txt
           ls -la
@@ -87,10 +89,11 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
-          RUST_BACKTRACE: 1
 
       - name: Sign something
         run: |
+          ls -l /home/runner/.gnupg
+          cat /home/runner/.gnupg/gpg-agent.conf
           echo "hello, world!" > a.txt
           gpg -s a.txt
           ls -la
