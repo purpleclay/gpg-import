@@ -241,7 +241,6 @@ pub fn import_secret_key(key: &str) -> Result<String, Box<dyn std::error::Error>
         .read_to_string(&mut s)
         .unwrap();
 
-    println!("{}", s);
     let key = parse_gpg_import(&s).unwrap();
     Ok(key.1)
 }
