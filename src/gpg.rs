@@ -11,7 +11,9 @@ use nom::{
 };
 use std::{
     fmt::{self, Display},
+    fs,
     io::Read,
+    path::Path,
     process::Command,
     str::FromStr,
 };
@@ -88,6 +90,27 @@ pub fn detect_version() -> Result<GpgInfo, Box<dyn std::error::Error>> {
     let gpg_info = output.parse::<GpgInfo>()?;
 
     Ok(gpg_info)
+}
+
+/// Configure the GPG agent with sensible defaults
+pub fn configure_agent_defaults(home_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let path = Path::new(home_dir).join("gpg-agent.conf");
+    // TODO: causes a panic if executed before any key is imported
+    fs::create_dir_all(home_dir)?;
+    fs::write(
+        path,
+        b"default-cache-ttl 21600
+max-cache-ttl 31536000
+allow-preset-passphrase",
+    )?;
+    return reload_agent();
+}
+
+fn reload_agent() -> Result<(), Box<dyn std::error::Error>> {
+    Command::new("gpg-connect-agent")
+        .args(vec!["RELOADAGENT", "/bye"])
+        .output()?;
+    Ok(())
 }
 
 /// A GPG private key
@@ -227,4 +250,22 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey, Box<dyn std::erro
     let output = String::from_utf8(gpg_key_details.stdout)?;
     let key_details = output.parse::<GpgPrivateKey>()?;
     Ok(key_details)
+}
+
+///
+pub fn preset_passphrase(
+    keygrip: &str,
+    passphrase: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    Command::new("gpg-connect-agent")
+        .args(vec![
+            "PRESET_PASSPHRASE",
+            keygrip,
+            "-1",
+            &hex::encode(passphrase).to_uppercase(),
+            "/bye",
+        ])
+        .output()?;
+
+    Ok(())
 }
