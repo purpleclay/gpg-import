@@ -176,11 +176,11 @@ impl Display for GpgPrivateKey {
 }
 
 fn parse_gpg_import(input: &str) -> IResult<&str, String> {
-    println!("hi");
+    println!("{}", input);
     let (i, _) = take_until("gpg: key")(input)?;
-    println!("there");
+    println!("{}", i);
     let (i, key) = separated_pair(tag("gpg: key"), tag(" "), take_until(":"))(i)?;
-    println!("done");
+    println!("{}", i);
     Ok((i, key.1.into()))
 }
 
