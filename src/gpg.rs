@@ -106,16 +106,6 @@ allow-preset-passphrase",
 }
 
 fn reload_agent() -> Result<(), Box<dyn std::error::Error>> {
-    // let reload_agent = Command::new("gpg-connect-agent")
-    //     .stdin(Stdio::piped())
-    //     .spawn()?;
-
-    // reload_agent
-    //     .stdin
-    //     .as_ref()
-    //     .unwrap()
-    //     .write_all("RELOADAGENT /bye".as_bytes())?;
-
     Command::new("gpg-connect-agent")
         .args(vec!["RELOADAGENT", "/bye"])
         .output()?;
@@ -181,6 +171,8 @@ impl Display for GpgPrivateKey {
                 .unwrap();
             writeln!(f, "expires_on:  {}", et.to_rfc2822())?;
         }
+        writeln!(f, "sub_keygrip: {}", self.secret_subkey.keygrip)?;
+        writeln!(f, "sub_key_id:  {}", self.secret_subkey.key_id)?;
         Ok(())
     }
 }
