@@ -2,7 +2,7 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::{TimeZone, Utc};
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_till, take_until},
+    bytes::complete::{tag, take_until},
     character::complete::not_line_ending,
     error::Error,
     multi::count,
@@ -95,7 +95,6 @@ pub fn detect_version() -> Result<GpgInfo, Box<dyn std::error::Error>> {
 /// Configure the GPG agent with sensible defaults
 pub fn configure_agent_defaults(home_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     let path = Path::new(home_dir).join("gpg-agent.conf");
-    // TODO: causes a panic if executed before any key is imported
     fs::create_dir_all(home_dir)?;
     fs::write(
         path,
@@ -107,9 +106,15 @@ allow-preset-passphrase",
 }
 
 fn reload_agent() -> Result<(), Box<dyn std::error::Error>> {
-    Command::new("gpg-connect-agent")
-        .args(vec!["RELOADAGENT", "/bye"])
-        .output()?;
+    let reload_agent = Command::new("gpg-connect-agent")
+        .stdin(Stdio::piped())
+        .spawn()?;
+
+    reload_agent
+        .stdin
+        .as_ref()
+        .unwrap()
+        .write_all("RELOADAGENT /bye".as_bytes())?;
     Ok(())
 }
 
@@ -263,23 +268,23 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey, Box<dyn std::erro
     Ok(key_details)
 }
 
-///
+/// Presets the passphrase for a given keygrip, ensuring it is cached for any
+/// subsequent signing request
 pub fn preset_passphrase(
     keygrip: &str,
     passphrase: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    Command::new("gpg-connect-agent")
-        .args(vec![
-            "PRESET_PASSPHRASE",
-            keygrip,
-            "-1",
-            &hex::encode(passphrase).to_uppercase(),
-            "/bye",
-        ])
-        .output()?;
+    let set_passphrase = Command::new("gpg-connect-agent")
+        .stdin(Stdio::piped())
+        .spawn()?;
 
-    Command::new("gpg-connect-agent")
-        .args(vec!["KEYINFO", keygrip, "/bye"])
-        .output()?;
+    set_passphrase.stdin.unwrap().write_all(
+        format!(
+            "PRESET_PASSPHRASE {} -1 {}",
+            keygrip,
+            &hex::encode(passphrase).to_uppercase()
+        )
+        .as_bytes(),
+    )?;
     Ok(())
 }

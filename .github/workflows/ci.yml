@@ -44,20 +44,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@v5
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.PASSPHRASE }}
-
-      - name: Sign something
-        run: |
-          ls -l /home/runner/.gnupg
-          cat /home/runner/.gnupg/gpg-agent.conf
-          echo "hello, world!" > a.txt
-          gpg -s a.txt
-          ls -la
-
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -88,7 +74,7 @@ jobs:
         run: ./target/debug/gpg-import
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          # GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
+          GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
 
       - name: Sign something
         run: |
