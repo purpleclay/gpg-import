@@ -22,8 +22,8 @@
 
 # Install script is heavily based on: https://github.com/Masterminds/glide.sh/blob/master/get
 
-: ${USE_SUDO:="true"}
-: ${GPG_IMPORT_INSTALL_DIR:="/usr/local/bin"}
+: "${USE_SUDO:='true'}"
+: "${GPG_IMPORT_INSTALL_DIR:='/usr/local/bin'}"
 
 HAS_CURL="$(type "curl" &> /dev/null && echo true || echo false)"
 HAS_WGET="$(type "wget" &> /dev/null && echo true || echo false)"
@@ -71,7 +71,7 @@ download() {
   local archive="gpg-import-${TAG}-${TARGET}.${PACKAGE_TYPE}"
 
   DOWNLOAD_URL="https://github.com/purpleclay/gpg-import/releases/download/${TAG}/${archive}"
-  echo $DOWNLOAD_URL
+  echo "$DOWNLOAD_URL"
   DOWNLOAD_DIR="$(mktemp -dt gpg-import-install-XXXXXXX)"
   GPG_IMPORT_FILE="${DOWNLOAD_DIR}/${archive}"
 
@@ -86,7 +86,7 @@ install() {
   echo "Installing gpg-import..."
 
   local extract_dir="$DOWNLOAD_DIR/gpg-import-$TAG"
-  mkdir -p $extract_dir
+  mkdir -p "$extract_dir"
   tar xf "$GPG_IMPORT_FILE" -C "${extract_dir}"
   runAsRoot cp "${extract_dir}/gpg-import" "${GPG_IMPORT_INSTALL_DIR}/gpg-import"
 
@@ -94,7 +94,7 @@ install() {
 }
 
 runAsRoot() {
-  if [ $EUID -ne 0 -a "$USE_SUDO" = "true" ]; then
+  if [ $EUID -ne 0 ] && [ "$USE_SUDO" = "true" ]; then
     sudo "${@}"
   else
     "${@}"
@@ -110,9 +110,9 @@ tidy() {
 
 verify() {
   set +e
-  GPG_IMPORT="$(command -v gpg-import)"
+  type "gpg-import" &> /dev/null
   if [ "$?" = "1" ]; then
-    echo "gpg-import not found. Is ${GPG_IMPORT_INSTALL_DIR} on your "'$PATH?'
+    echo "gpg-import not found. Is ${GPG_IMPORT_INSTALL_DIR} on your PATH?"
     exit 1
   fi
 
@@ -147,7 +147,7 @@ trap "bye" EXIT
 set -e
 
 # Parsing input arguments (if any)
-export INPUT_ARGUMENTS="${@}"
+export INPUT_ARGUMENTS=("$@")
 set -u
 while [[ $# -gt 0 ]]; do
   case $1 in
