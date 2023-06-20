@@ -3,7 +3,7 @@ use chrono::{TimeZone, Utc};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
-    character::streaming::not_line_ending,
+    character::complete::not_line_ending,
     error::Error,
     multi::count,
     sequence::{pair, separated_pair, tuple},
@@ -11,7 +11,9 @@ use nom::{
 };
 use std::{
     fmt::{self, Display},
+    fs,
     io::Read,
+    path::Path,
     process::Command,
     str::FromStr,
 };
@@ -90,6 +92,27 @@ pub fn detect_version() -> Result<GpgInfo, Box<dyn std::error::Error>> {
     Ok(gpg_info)
 }
 
+/// Configure the GPG agent with sensible defaults
+pub fn configure_agent_defaults(home_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let path = Path::new(home_dir).join("gpg-agent.conf");
+    fs::create_dir_all(home_dir)?;
+    fs::write(
+        path,
+        b"default-cache-ttl 21600
+max-cache-ttl 31536000
+allow-preset-passphrase",
+    )?;
+    return reload_agent();
+}
+
+fn reload_agent() -> Result<(), Box<dyn std::error::Error>> {
+    Command::new("gpg-connect-agent")
+        .args(vec!["RELOADAGENT", "/bye"])
+        .output()?;
+
+    Ok(())
+}
+
 /// A GPG private key
 #[derive(Debug)]
 pub struct GpgPrivateKey {
@@ -97,8 +120,10 @@ pub struct GpgPrivateKey {
     pub user_name: String,
     /// The user email associated with the private key
     pub user_email: String,
-    /// Internal details of the private key
+    /// Internal details of the secret key
     pub secret_key: GpgKeyDetails,
+    /// Internal details of the secret subkey
+    pub secret_subkey: GpgKeyDetails,
 }
 
 /// Contains internal details of a GPG private key
@@ -146,12 +171,14 @@ impl Display for GpgPrivateKey {
                 .unwrap();
             writeln!(f, "expires_on:  {}", et.to_rfc2822())?;
         }
+        writeln!(f, "sub_keygrip: {}", self.secret_subkey.keygrip)?;
+        writeln!(f, "sub_key_id:  {}", self.secret_subkey.key_id)?;
         Ok(())
     }
 }
 
 fn parse_gpg_import(input: &str) -> IResult<&str, String> {
-    let (i, _) = take_until("gpg: key")(input)?;
+    let (i, _) = take_until("gpg: key ")(input)?;
     let (i, key) = separated_pair(tag("gpg: key"), tag(" "), take_until(":"))(i)?;
     Ok((i, key.1.into()))
 }
@@ -169,6 +196,13 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
         count(pair(take_until(":"), tag(":")), 9),
     ))(i)?;
     let (i, uid) = separated_pair(take_until(" "), tag(" "), take_until(":"))(i)?;
+    let (i, _) = take_until("ssb")(i)?;
+    let (i, _) = tuple((tag("ssb"), count(pair(take_until(":"), tag(":")), 4)))(i)?;
+    let (i, ssb) = count(pair(take_until(":"), tag(":")), 3)(i)?;
+    let (i, _) = tuple((take_until("fpr"), tag("fpr"), count(tag(":"), 9)))(i)?;
+    let (i, ssb_fpr) = take_until(":")(i)?;
+    let (i, _) = tuple((take_until("grp"), tag("grp"), count(tag(":"), 9)))(i)?;
+    let (i, ssb_grp) = take_until(":")(i)?;
 
     Ok((
         i,
@@ -182,9 +216,20 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
                 } else {
                     Some(sec[2].0.parse::<i64>().unwrap())
                 },
-                key_id: sec[0].0.into(),
                 fingerprint: sec_fpr.into(),
+                key_id: sec[0].0.into(),
                 keygrip: sec_grp.into(),
+            },
+            secret_subkey: GpgKeyDetails {
+                creation_date: ssb[1].0.parse::<i64>().unwrap(),
+                expiration_date: if ssb[2].0.is_empty() {
+                    None
+                } else {
+                    Some(ssb[2].0.parse::<i64>().unwrap())
+                },
+                fingerprint: ssb_fpr.into(),
+                key_id: ssb[0].0.into(),
+                keygrip: ssb_grp.into(),
             },
         },
     ))
@@ -227,4 +272,27 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey, Box<dyn std::erro
     let output = String::from_utf8(gpg_key_details.stdout)?;
     let key_details = output.parse::<GpgPrivateKey>()?;
     Ok(key_details)
+}
+
+/// Presets the passphrase for a given keygrip, ensuring it is cached for any
+/// subsequent signing request
+pub fn preset_passphrase(
+    keygrip: &str,
+    passphrase: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let set_passphrase = Command::new("gpg-connect-agent")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()?;
+
+    set_passphrase.stdin.as_ref().unwrap().write_all(
+        format!(
+            "PRESET_PASSPHRASE {} -1 {}",
+            keygrip,
+            &hex::encode(passphrase).to_uppercase()
+        )
+        .as_bytes(),
+    )?;
+    set_passphrase.wait_with_output()?;
+    Ok(())
 }

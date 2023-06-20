@@ -4,7 +4,8 @@ Easily import a GPG key within any CI workflow.
 
 ## Features
 
-- Configures local git config (`.git/config`) within a detected repository, syncing committer details and enabling GPG signing of commits, tags, and pushes. Can be skipped with the `GPG_SKIP_GIT=true` environment variable.
+- Configures local git config (`.git/config`) within a detected repository, syncing committer details and enabling GPG signing of commits, tags, and pushes. You can skip this step by setting the `GPG_SKIP_GIT=true` environment variable.
+- Seed the GPG Agent with your key's passphrase to remove the need for manual passphrase entry by simply setting the `GPG_PASSPHRASE` environment variable. For best security practice, mask the variable in your chosen CI tool.
 
 ## Install
 
@@ -36,7 +37,7 @@ gpg --armor --export-secret-key batman@dc.com | base64 | xclip
 
 ## Quick Start
 
-For seamless integration into your CI platform, set the `GPG_PRIVATE_KEY` environment variable and let `gpg-import` import do the rest.
+For seamless integration into your CI platform, set the `GPG_PRIVATE_KEY` and optional `GPG_PASSPHRASE` environment variables, then let `gpg-import`` import do the rest.
 
 ```sh
 $ gpg-import
@@ -51,6 +52,12 @@ keygrip:     147098685499F4C183A39CA1A51CDE6316DDD479
 key_id:      E5389A1079D5A52F
 user:        batman <batman@dc.com>
 created_on:  Tue, 09 May 2023 19:39:26 +0000
+sub_keygrip: A213D84D786B8DBED68195C178B650CD24B88B2D
+sub_key_id:  2D219DD41933A2D5
+
+> Setting Passphrase:
+keygrip: 147098685499F4C183A39CA1A51CDE6316DDD479 [E5389A1079D5A52F]
+keygrip: A213D84D786B8DBED68195C178B650CD24B88B2D [2D219DD41933A2D5]
 
 > Git config set:
 user.name:       batman

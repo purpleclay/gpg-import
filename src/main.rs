@@ -14,6 +14,10 @@ struct Args {
     )]
     key: String,
 
+    /// The passphrase of the GPG private key if set
+    #[arg(short, long, env = "GPG_PASSPHRASE")]
+    passphrase: Option<String>,
+
     /// Skip all GPG configuration for the detected git repository
     #[arg(short, long, env = "GPG_SKIP_GIT", default_value_t = false)]
     skip_git: bool,
@@ -30,6 +34,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let private_key = gpg::extract_key_info(&key_id)?;
     println!("> Imported GPG key:");
     println!("{}", private_key);
+
+    if let Some(passphrase) = args.passphrase {
+        gpg::configure_agent_defaults(&info.home_dir)?;
+        gpg::preset_passphrase(&private_key.secret_key.keygrip, &passphrase)?;
+        gpg::preset_passphrase(&private_key.secret_subkey.keygrip, &passphrase)?;
+
+        println!("> Setting Passphrase:");
+        println!(
+            "keygrip: {} [{}]",
+            private_key.secret_key.keygrip, private_key.secret_key.key_id
+        );
+        println!(
+            "keygrip: {} [{}]",
+            private_key.secret_subkey.keygrip, private_key.secret_subkey.key_id
+        );
+    }
 
     if !args.skip_git {
         if let Some(repo) = git::is_repo() {
