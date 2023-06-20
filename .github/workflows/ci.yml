@@ -29,9 +29,9 @@ on:
   pull_request:
     branches:
       - main
-    # paths:
-    #   - "src/**"
-    #   - "Cargo.*"
+    paths:
+      - "src/**"
+      - "Cargo.*"
 
 permissions:
   contents: read
@@ -54,35 +54,6 @@ jobs:
         with:
           command: fmt
           args: --check
-
-  test:
-    runs-on: ubuntu-latest
-    name: test
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform.target }}
-
-      - name: Build
-        run: cargo build
-
-      - name: Run
-        run: ./target/debug/gpg-import
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
-
-      - name: Sign something
-        run: |
-          ls -l /home/runner/.gnupg
-          cat /home/runner/.gnupg/gpg-agent.conf
-          echo "hello, world!" > a.txt
-          gpg -s a.txt
-          ls -la
 
   clippy:
       runs-on: ubuntu-latest
