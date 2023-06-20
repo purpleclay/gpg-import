@@ -106,15 +106,20 @@ allow-preset-passphrase",
 }
 
 fn reload_agent() -> Result<(), Box<dyn std::error::Error>> {
-    let reload_agent = Command::new("gpg-connect-agent")
-        .stdin(Stdio::piped())
-        .spawn()?;
+    // let reload_agent = Command::new("gpg-connect-agent")
+    //     .stdin(Stdio::piped())
+    //     .spawn()?;
 
-    reload_agent
-        .stdin
-        .as_ref()
-        .unwrap()
-        .write_all("RELOADAGENT /bye".as_bytes())?;
+    // reload_agent
+    //     .stdin
+    //     .as_ref()
+    //     .unwrap()
+    //     .write_all("RELOADAGENT /bye".as_bytes())?;
+
+    Command::new("gpg-connect-agent")
+        .args(vec!["RELOADAGENT", "/bye"])
+        .output()?;
+
     Ok(())
 }
 
@@ -276,9 +281,10 @@ pub fn preset_passphrase(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let set_passphrase = Command::new("gpg-connect-agent")
         .stdin(Stdio::piped())
+        .stdout(Stdio::null())
         .spawn()?;
 
-    set_passphrase.stdin.unwrap().write_all(
+    set_passphrase.stdin.as_ref().unwrap().write_all(
         format!(
             "PRESET_PASSPHRASE {} -1 {}",
             keygrip,
@@ -286,5 +292,6 @@ pub fn preset_passphrase(
         )
         .as_bytes(),
     )?;
+    set_passphrase.wait_with_output()?;
     Ok(())
 }
