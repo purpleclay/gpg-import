@@ -6,6 +6,7 @@ Easily import a GPG key within any CI workflow.
 
 - Configures local git config (`.git/config`) within a detected repository, syncing committer details and enabling GPG signing of commits, tags, and pushes. You can skip this step by setting the `GPG_SKIP_GIT=true` environment variable.
 - Seed the GPG Agent with your key's passphrase to remove the need for manual passphrase entry by simply setting the `GPG_PASSPHRASE` environment variable. For best security practice, mask the variable in your chosen CI tool.
+- Set the owner trust level of a private GPG key by defining the `GPG_TRUST_LEVEL` environment variable. Trust levels range between 1 (`undefined`) and 5 (`ultimate`), details of each can be found [here](https://gpgtools.tenderapp.com/kb/faq/what-is-ownertrust-trust-levels-explained).
 
 ## Install
 
@@ -20,7 +21,7 @@ Download a specific version using the `-v` flag. The script uses `sudo` by defau
 
 ```sh
 curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install \
-  | bash -s -- -v 0.1.0 --no-sudo
+  | bash -s -- -v 0.3.0 --no-sudo
 ```
 
 ## Prerequisites
@@ -37,7 +38,7 @@ gpg --armor --export-secret-key batman@dc.com | base64 | xclip
 
 ## Quick Start
 
-For seamless integration into your CI platform, set the `GPG_PRIVATE_KEY` and optional `GPG_PASSPHRASE` environment variables, then let `gpg-import`` import do the rest.
+For seamless integration into your CI platform, set the `GPG_PRIVATE_KEY` and any optional environment variables (`GPG_PASSPHRASE` and `GPG_TRUST_LEVEL`), then let `gpg-import` import do the rest.
 
 ```sh
 $ gpg-import
@@ -58,6 +59,9 @@ sub_key_id:  2D219DD41933A2D5
 > Setting Passphrase:
 keygrip: 147098685499F4C183A39CA1A51CDE6316DDD479 [E5389A1079D5A52F]
 keygrip: A213D84D786B8DBED68195C178B650CD24B88B2D [2D219DD41933A2D5]
+
+> Setting Trust Level:
+trust_level: 5 [E5389A1079D5A52F]
 
 > Git config set:
 user.name:       batman
