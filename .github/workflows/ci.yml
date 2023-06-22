@@ -144,11 +144,11 @@ jobs:
         run: |
           EXE_SUFFIX=""
           case ${{ matrix.job.target }} in
-            *-pc-windows-*) EXE_suffix=".exe" ;;
+            *-pc-windows-*) EXE_SUFFIX=".exe" ;;
           esac;
           PKG_SUFFIX=".tar.gz";
           case ${{ matrix.job.target }} in
-            *-pc-windows-*) PKG_suffix=".zip" ;;
+            *-pc-windows-*) PKG_SUFFIX=".zip" ;;
           esac;
           PKG_NAME=gpg-import-${{ github.ref_name }}-${{ matrix.platform.target }}$PKG_SUFFIX
           PKG_DIR=archive/gpg-import
