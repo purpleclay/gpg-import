@@ -296,3 +296,29 @@ pub fn preset_passphrase(
     set_passphrase.wait_with_output()?;
     Ok(())
 }
+
+/// Assign a trust level to an imported key
+pub fn assign_trust_level(key_id: &str, trust_level: u8) -> Result<(), Box<dyn std::error::Error>> {
+    let set_trust = Command::new("gpg")
+        .args(vec![
+            "--batch",
+            "--no-tty",
+            "--command-fd",
+            "0",
+            "--edit-key",
+            key_id,
+            "trust",
+            "quit",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()?;
+
+    set_trust
+        .stdin
+        .as_ref()
+        .unwrap()
+        .write_all(format!("{}\ny\n", trust_level).as_bytes())?;
+    set_trust.wait_with_output()?;
+    Ok(())
+}
