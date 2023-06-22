@@ -23,13 +23,13 @@ on:
   push:
     branches:
       - main
-    # paths:
-    #   - "scripts/**"
+    paths:
+      - "scripts/**"
   pull_request:
     branches:
       - main
-    # paths:
-    #   - "scripts/**"
+    paths:
+      - "scripts/**"
 
 permissions:
   contents: read
