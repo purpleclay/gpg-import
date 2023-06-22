@@ -91,23 +91,31 @@ jobs:
         shell: bash
         run: |
           EXE_SUFFIX=""
-          case ${{ matrix.job.target }} in
-            *-pc-windows-*) EXE_suffix=".exe" ;;
+          case ${{ matrix.platform.target }} in
+            *-pc-windows-*)
+              EXE_SUFFIX=".exe"
+              ;;
           esac;
           PKG_SUFFIX=".tar.gz";
-          case ${{ matrix.job.target }} in
-            *-pc-windows-*) PKG_suffix=".zip" ;;
+          case ${{ matrix.platform.target }} in
+            *-pc-windows-*)
+              PKG_SUFFIX=".zip"
+              ;;
           esac;
-          PKG_NAME=gpg-import-${{ github.ref_name }}-${{ matrix.platform.target }}$PKG_SUFFIX
+          PKG_NAME=gpg-import-${{ matrix.platform.target }}$PKG_SUFFIX
           PKG_DIR=archive/gpg-import
           mkdir -p $PKG_DIR
           cp target/${{ matrix.platform.target }}/release/gpg-import$EXE_SUFFIX $PKG_DIR/
           cp README.md LICENSE $PKG_DIR/
 
           pushd $PKG_DIR >/dev/null
-          case ${{ matrix.job.target }} in
-            *-pc-windows-*) 7z -y a "${PKG_NAME}" * | tail -2 ;;
-            *) tar czf "${PKG_NAME}" * ;;
+          case ${{ matrix.platform.target }} in
+            *-pc-windows-*)
+              7z -y a "${PKG_NAME}" * | tail -2
+              ;;
+            *)
+              tar czf "${PKG_NAME}" *
+              ;;
           esac;
           popd >/dev/null
 

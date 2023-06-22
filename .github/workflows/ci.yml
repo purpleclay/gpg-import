@@ -29,9 +29,9 @@ on:
   pull_request:
     branches:
       - main
-    # paths:
-    #   - "src/**"
-    #   - "Cargo.*"
+    paths:
+      - "src/**"
+      - "Cargo.*"
 
 permissions:
   contents: read
@@ -137,37 +137,3 @@ jobs:
           use-cross: ${{ matrix.platform.use-cross }}
           command: build
           args: --locked --release --target ${{ matrix.platform.target }}
-
-      - name: Archive
-        id: archive
-        shell: bash
-        run: |
-          EXE_SUFFIX=""
-          case ${{ matrix.platform.target }} in
-            *-pc-windows-*)
-              EXE_SUFFIX=".exe"
-              ;;
-          esac;
-          PKG_SUFFIX=".tar.gz";
-          case ${{ matrix.platform.target }} in
-            *-pc-windows-*)
-              PKG_SUFFIX=".zip"
-              ;;
-          esac;
-          PKG_NAME=gpg-import-${{ matrix.platform.target }}$PKG_SUFFIX
-          PKG_DIR=archive/gpg-import
-          mkdir -p $PKG_DIR
-          cp target/${{ matrix.platform.target }}/release/gpg-import$EXE_SUFFIX $PKG_DIR/
-          cp README.md LICENSE $PKG_DIR/
-
-          pushd $PKG_DIR >/dev/null
-          case ${{ matrix.platform.target }} in
-            *-pc-windows-*)
-              7z -y a "${PKG_NAME}" * | tail -2
-              7z l "${PKG_NAME}"
-              ;;
-            *)
-              tar czf "${PKG_NAME}" *
-              ;;
-          esac;
-          popd >/dev/null
