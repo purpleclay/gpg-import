@@ -34,11 +34,19 @@ initTarget() {
     platform="unknown-linux-musl"
     TARGET="$(uname -m)-$platform"
     ;;
+  "Darwin")
+    platform="apple-darwin"
+    TARGET="$(uname -m)-$platform"
+    ;;
+  "Windows")
+    platform="pc-windows-msvc"
+    TARGET="$(uname -m)-$platform"
+    ;;
   esac
 }
 
 canDownload() {
-    local supported="x86_64-unknown-linux-musl\naarch64-unknown-linux-musl"
+    local supported="x86_64-unknown-linux-musl\naarch64-unknown-linux-musl\nx86_64-apple-darwin\naarch64-apple-darwin\nx86_64-pc-windows-msvc\naarch64-pc-windows-msvc"
     if ! echo "${supported}" | grep -q "${TARGET}"; then
       echo "No prebuilt binary currently exists for target ${TARGET}."
       exit 1

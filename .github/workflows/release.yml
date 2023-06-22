@@ -47,6 +47,26 @@ jobs:
             runs-on: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             use-cross: true
+          - name: darwin_x86_64
+            runs-on: macos-latest
+            target: x86_64-apple-darwin
+            use-cross: false
+          - name: darwin_aarch64
+            runs-on: macos-latest
+            target: aarch64-apple-darwin
+            use-cross: false
+          - name: windows_x86_64_msvc
+            runs-on: windows-latest
+            target: x86_64-pc-windows-msvc
+            use-cross: false
+          - name: windows_x86_64_gnu
+            runs-on: windows-latest
+            target: x86_64-pc-windows-gnu
+            use-cross: false
+          - name: windows_aarch64
+            runs-on: windows-latest
+            target: aarch64-pc-windows-msvc
+            use-cross: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -70,14 +90,33 @@ jobs:
         id: archive
         shell: bash
         run: |
-          PKG_NAME=gpg-import-${{ github.ref_name }}-${{ matrix.platform.target }}.tar.gz
+          EXE_SUFFIX=""
+          case ${{ matrix.platform.target }} in
+            *-pc-windows-*)
+              EXE_SUFFIX=".exe"
+              ;;
+          esac;
+          PKG_SUFFIX=".tar.gz";
+          case ${{ matrix.platform.target }} in
+            *-pc-windows-*)
+              PKG_SUFFIX=".zip"
+              ;;
+          esac;
+          PKG_NAME=gpg-import-${{ matrix.platform.target }}$PKG_SUFFIX
           PKG_DIR=archive/gpg-import
           mkdir -p $PKG_DIR
-          cp target/${{ matrix.platform.target }}/release/gpg-import $PKG_DIR/
+          cp target/${{ matrix.platform.target }}/release/gpg-import$EXE_SUFFIX $PKG_DIR/
           cp README.md LICENSE $PKG_DIR/
 
           pushd $PKG_DIR >/dev/null
-          tar czf "${PKG_NAME}" *
+          case ${{ matrix.platform.target }} in
+            *-pc-windows-*)
+              7z -y a "${PKG_NAME}" * | tail -2
+              ;;
+            *)
+              tar czf "${PKG_NAME}" *
+              ;;
+          esac;
           popd >/dev/null
 
           # Output path to archive for future upload
@@ -89,6 +128,7 @@ jobs:
         with:
           name: ${{ steps.archive.outputs.archive-name }}
           path: ${{ steps.archive.outputs.archive-path }}
+          retention-days: 1
 
   release:
     runs-on: ubuntu-latest
