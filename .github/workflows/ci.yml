@@ -29,9 +29,9 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "src/**"
-      - "Cargo.*"
+    # paths:
+    #   - "src/**"
+    #   - "Cargo.*"
 
 permissions:
   contents: read
@@ -99,6 +99,17 @@ jobs:
             runs-on: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             use-cross: true
+          - name: x86_64-apple-darwin
+            runs-on: macos-latest
+            target: x86_64-apple-darwin
+            use-cross: false
+          - name: aarch64-apple-darwin
+            runs-on: macos-latest
+            target: aarch64-apple-darwin
+            use-cross: false
+            # aarch64-pc-windows-msvc (cross: false)
+            # x86_64-pc-windows-msvc (cross: false)
+            # x86_64-pc-windows-gnu (cross: false)
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
