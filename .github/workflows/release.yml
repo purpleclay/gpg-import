@@ -102,7 +102,7 @@ jobs:
               PKG_SUFFIX=".zip"
               ;;
           esac;
-          PKG_NAME=gpg-import-${{ matrix.platform.target }}$PKG_SUFFIX
+          PKG_NAME=gpg-import-${{ github.ref_name }}-${{ matrix.platform.target }}$PKG_SUFFIX
           PKG_DIR=archive/gpg-import
           mkdir -p $PKG_DIR
           cp target/${{ matrix.platform.target }}/release/gpg-import$EXE_SUFFIX $PKG_DIR/
