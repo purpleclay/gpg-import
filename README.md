@@ -13,15 +13,14 @@ Easily import a GPG key within any CI workflow. Runs on any Linux, MacOs or Wind
 To install the latest version using a bash script:
 
 ```sh
-curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install \
-  | bash
+sh -c "$(curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install)"
 ```
 
-Download a specific version using the `-v` flag. The script uses `sudo` by default but can be disabled through the `--no-sudo` flag.
+Download a specific version using the `-v` flag. The script uses `sudo` by default but can be disabled through the `--no-sudo` flag. You can also provide a different installation directory from the default `/usr/local/bin` by using the `-d` flag:
 
 ```sh
-curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install \
-  | bash -s -- -v 0.3.0 --no-sudo
+sh -c "$(curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install)" \
+  -- -v 0.3.0 --no-sudo -d ./bin
 ```
 
 ## Prerequisites
