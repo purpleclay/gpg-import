@@ -195,7 +195,7 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
         tag("uid"),
         count(pair(take_until(":"), tag(":")), 9),
     ))(i)?;
-    let (i, uid) = separated_pair(take_until(" "), tag(" "), take_until(":"))(i)?;
+    let (i, uid) = separated_pair(take_until(" <"), tag(" <"), take_until(">"))(i)?;
     let (i, _) = take_until("ssb")(i)?;
     let (i, _) = tuple((tag("ssb"), count(pair(take_until(":"), tag(":")), 4)))(i)?;
     let (i, ssb) = count(pair(take_until(":"), tag(":")), 3)(i)?;
@@ -208,7 +208,7 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
         i,
         GpgPrivateKey {
             user_name: uid.0.into(),
-            user_email: uid.1[1..uid.1.len() - 1].into(),
+            user_email: uid.1.into(),
             secret_key: GpgKeyDetails {
                 creation_date: sec[1].0.parse::<i64>().unwrap(),
                 expiration_date: if sec[2].0.is_empty() {
