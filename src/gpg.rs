@@ -92,6 +92,18 @@ pub fn detect_version() -> Result<GpgInfo, Box<dyn std::error::Error>> {
     Ok(gpg_info)
 }
 
+/// Configure GPG with sensible defaults
+pub fn configure_defaults(home_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let path = Path::new(home_dir).join("gpg.conf");
+    fs::create_dir_all(home_dir)?;
+    fs::write(
+        path,
+        b"use-agent
+pinentry-mode loopback",
+    )?;
+    Ok(())
+}
+
 /// Configure the GPG agent with sensible defaults
 pub fn configure_agent_defaults(home_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     let path = Path::new(home_dir).join("gpg-agent.conf");
@@ -100,7 +112,8 @@ pub fn configure_agent_defaults(home_dir: &str) -> Result<(), Box<dyn std::error
         path,
         b"default-cache-ttl 21600
 max-cache-ttl 31536000
-allow-preset-passphrase",
+allow-preset-passphrase
+allow-loopback-pinentry",
     )?;
     return reload_agent();
 }

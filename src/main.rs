@@ -65,8 +65,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("> Imported GPG key:");
     println!("{}", private_key);
 
+    gpg::configure_defaults(&info.home_dir)?;
+    gpg::configure_agent_defaults(&info.home_dir)?;
+
     if let Some(passphrase) = args.passphrase {
-        gpg::configure_agent_defaults(&info.home_dir)?;
         gpg::preset_passphrase(&private_key.secret_key.keygrip, &passphrase)?;
         gpg::preset_passphrase(&private_key.secret_subkey.keygrip, &passphrase)?;
 
