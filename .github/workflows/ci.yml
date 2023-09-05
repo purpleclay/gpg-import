@@ -42,7 +42,7 @@ jobs:
     name: rustfmt / stable
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
@@ -64,7 +64,7 @@ jobs:
           toolchain: [stable, beta]
       steps:
         - name: Checkout repository
-          uses: actions/checkout@v3
+          uses: actions/checkout@v4
 
         - name: Install ${{ matrix.toolchain }}
           uses: dtolnay/rust-toolchain@master
@@ -121,7 +121,7 @@ jobs:
             use-cross: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
