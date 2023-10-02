@@ -7,7 +7,7 @@ license = "MIT"
 version = "0.3.2"
 
 [dependencies]
-base64 = "0.21.1"
+base64 = "0.21.4"
 chrono = { version = "0.4.24", default-features = false, features = ["std"] }
 clap = { version = "4.3.4", features = ["derive", "env"] }
 git2 = { version = "0.17.2", default-features = false }
