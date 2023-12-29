@@ -9,7 +9,7 @@ version = "0.3.2"
 [dependencies]
 base64 = "0.21.5"
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
-clap = { version = "4.4.8", features = ["derive", "env"] }
+clap = { version = "4.4.12", features = ["derive", "env"] }
 git2 = { version = "0.18.1", default-features = false }
 hex = "0.4.3"
 nom = "7.1.3"
