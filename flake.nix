@@ -20,19 +20,23 @@
         pkgs = import nixpkgs {
           inherit system overlays;
         };
+
+        inherit (nixpkgs) lib;
+
+        buildInputs = with pkgs; [
+          openssl
+        ];
+
+        nativeBuildInputs = with pkgs; [
+          rust-bin.stable.latest.default
+          pkg-config
+        ]
+        ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security ];
       in
       with pkgs;
       {
         devShells.default = mkShell {
-          buildInputs = [
-            rust-bin.stable.latest.default
-            openssl
-          ];
-
-          nativeBuildInputs = [
-            darwin.apple_sdk.frameworks.Security
-            pkg-config
-          ];
+          inherit buildInputs nativeBuildInputs;
         };
       }
     );
