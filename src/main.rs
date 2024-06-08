@@ -61,7 +61,7 @@ fn main() -> Result<()> {
     println!("> Detected GnuPG:");
     println!("{}", info);
 
-    let key_id = gpg::import_secret_key(&args.key)?;
+    let key_id = gpg::import_secret_key(&args.key.trim())?;
     let private_key = gpg::extract_key_info(&key_id)?;
     println!("> Imported GPG key:");
     println!("{}", private_key);
@@ -70,8 +70,9 @@ fn main() -> Result<()> {
     gpg::configure_agent_defaults(&info.home_dir)?;
 
     if let Some(passphrase) = args.passphrase {
-        gpg::preset_passphrase(&private_key.secret_key.keygrip, &passphrase)?;
-        gpg::preset_passphrase(&private_key.secret_subkey.keygrip, &passphrase)?;
+        let passphrase_cleaned = passphrase.trim();
+        gpg::preset_passphrase(&private_key.secret_key.keygrip, &passphrase_cleaned)?;
+        gpg::preset_passphrase(&private_key.secret_subkey.keygrip, &passphrase_cleaned)?;
 
         println!("> Setting Passphrase:");
         println!(
@@ -96,7 +97,7 @@ fn main() -> Result<()> {
 
     if !args.skip_git {
         if let Some(repo) = git::is_repo() {
-            println!("> Git config set:");
+            println!("\n> Git config set:");
 
             let git_cfg = git::SigningConfig {
                 user_name: private_key.user_name,

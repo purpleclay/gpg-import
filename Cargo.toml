@@ -6,6 +6,9 @@ edition = "2021"
 license = "MIT"
 version = "0.3.2"
 
+[profile.release]
+strip = "debuginfo"
+
 [dependencies]
 anyhow = "1.0.86"
 base64 = "0.22.0"

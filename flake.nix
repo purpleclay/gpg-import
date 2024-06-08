@@ -20,19 +20,23 @@
         pkgs = import nixpkgs {
           inherit system overlays;
         };
+
+        inherit (nixpkgs) lib;
+
+        buildInputs = with pkgs; [
+          openssl
+        ];
+
+        nativeBuildInputs = with pkgs; [
+          rust-bin.stable.latest.default
+          pkg-config
+        ]
+        ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security ];
       in
       with pkgs;
       {
         devShells.default = mkShell {
-          buildInputs = [
-            rust-analyzer
-            rust-bin.stable.latest.default
-            # TODO: are these specific to Apple only? How do I configure that?
-            darwin.apple_sdk.frameworks.Security
-            # TODO: are these two dependencies needed?
-            pkg-config
-            openssl
-          ];
+          inherit buildInputs nativeBuildInputs;
         };
       }
     );
