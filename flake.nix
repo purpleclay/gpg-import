@@ -25,13 +25,13 @@
       {
         devShells.default = mkShell {
           buildInputs = [
-            rust-analyzer
             rust-bin.stable.latest.default
-            # TODO: are these specific to Apple only? How do I configure that?
-            darwin.apple_sdk.frameworks.Security
-            # TODO: are these two dependencies needed?
-            pkg-config
             openssl
+          ];
+
+          nativeBuildInputs = [
+            darwin.apple_sdk.frameworks.Security
+            pkg-config
           ];
         };
       }
