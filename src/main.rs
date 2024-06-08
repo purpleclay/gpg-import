@@ -1,3 +1,4 @@
+use anyhow::Result;
 use clap::{command, Parser, ValueEnum};
 use gpg_import::{git, gpg};
 use std::println;
@@ -53,7 +54,7 @@ impl TrustLevel {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     let info = gpg::detect_version()?;

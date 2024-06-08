@@ -1,6 +1,6 @@
+use anyhow::Result;
+use git2::Repository;
 use std::fmt::{self, Display};
-
-use git2::{Error, Repository};
 
 /// Git GPG signing configuration that will written to the local
 /// .git/config of the repository
@@ -44,7 +44,7 @@ pub fn is_repo() -> Option<Repository> {
 
 /// Configures the current repository to support GPG signing based on
 /// the provided config
-pub fn configure_signing(repo: &Repository, cfg: &SigningConfig) -> Result<(), Error> {
+pub fn configure_signing(repo: &Repository, cfg: &SigningConfig) -> Result<()> {
     let mut config = repo.config()?;
 
     config.set_str("user.name", &cfg.user_name)?;

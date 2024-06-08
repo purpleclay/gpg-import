@@ -1,4 +1,5 @@
-use base64::{engine::general_purpose, Engine as _};
+use anyhow::{bail, Result};
+use base64::{engine::general_purpose, DecodeError, Engine as _};
 use chrono::{TimeZone, Utc};
 use nom::{
     branch::alt,
@@ -7,7 +8,7 @@ use nom::{
     error::Error,
     multi::count,
     sequence::{pair, separated_pair, tuple},
-    Finish, IResult,
+    AsChar, Finish, IResult,
 };
 use std::{
     fmt::{self, Display},
@@ -18,6 +19,7 @@ use std::{
     str::FromStr,
 };
 use std::{io::Write, process::Stdio};
+use thiserror::Error;
 
 /// Provides details about the installed GPG client
 #[derive(Debug)]
@@ -83,7 +85,7 @@ fn parse_gpg_info(input: &str) -> IResult<&str, GpgInfo> {
 
 /// Inspects the OS for a GPG client and retrieves details about the
 /// currently installed version
-pub fn detect_version() -> Result<GpgInfo, Box<dyn std::error::Error>> {
+pub fn detect_version() -> Result<GpgInfo> {
     let gpg_details = Command::new("gpg").arg("--version").output()?;
 
     let output = String::from_utf8(gpg_details.stdout)?;
@@ -93,7 +95,7 @@ pub fn detect_version() -> Result<GpgInfo, Box<dyn std::error::Error>> {
 }
 
 /// Configure GPG with sensible defaults
-pub fn configure_defaults(home_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn configure_defaults(home_dir: &str) -> Result<()> {
     let path = Path::new(home_dir).join("gpg.conf");
     fs::create_dir_all(home_dir)?;
     fs::write(
@@ -105,7 +107,7 @@ pinentry-mode loopback",
 }
 
 /// Configure the GPG agent with sensible defaults
-pub fn configure_agent_defaults(home_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn configure_agent_defaults(home_dir: &str) -> Result<()> {
     let path = Path::new(home_dir).join("gpg-agent.conf");
     fs::create_dir_all(home_dir)?;
     fs::write(
@@ -118,7 +120,7 @@ allow-loopback-pinentry",
     return reload_agent();
 }
 
-fn reload_agent() -> Result<(), Box<dyn std::error::Error>> {
+fn reload_agent() -> Result<()> {
     Command::new("gpg-connect-agent")
         .args(vec!["RELOADAGENT", "/bye"])
         .output()?;
@@ -248,9 +250,22 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
     ))
 }
 
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("detected invalid byte at position {0} within gpg key '{1}'")]
+struct InvalidByteInGpgKey(usize, char);
+
 /// Attempts to import a GPG private key
-pub fn import_secret_key(key: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let decoded = general_purpose::STANDARD.decode(key)?;
+pub fn import_secret_key(key: &str) -> Result<String> {
+    let decoded = match general_purpose::STANDARD.decode(key) {
+        Ok(decoded_key) => Ok(decoded_key),
+        Err(e) => match e {
+            DecodeError::InvalidByte(offset, byte) => {
+                bail!(InvalidByteInGpgKey(offset, byte.as_char()))
+            }
+            _ => Err(e),
+        },
+    }?;
+
     let gpg_import_info = Command::new("gpg")
         .args(vec!["--import", "--batch", "--yes"])
         .stdin(Stdio::piped())
@@ -270,7 +285,7 @@ pub fn import_secret_key(key: &str) -> Result<String, Box<dyn std::error::Error>
 }
 
 /// Extracts internal details for a given GPG private key
-pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey, Box<dyn std::error::Error>> {
+pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
     let gpg_key_details = Command::new("gpg")
         .args(vec![
             "--batch",
@@ -289,10 +304,7 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey, Box<dyn std::erro
 
 /// Presets the passphrase for a given keygrip, ensuring it is cached for any
 /// subsequent signing request
-pub fn preset_passphrase(
-    keygrip: &str,
-    passphrase: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn preset_passphrase(keygrip: &str, passphrase: &str) -> Result<()> {
     let set_passphrase = Command::new("gpg-connect-agent")
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -311,7 +323,7 @@ pub fn preset_passphrase(
 }
 
 /// Assign a trust level to an imported key
-pub fn assign_trust_level(key_id: &str, trust_level: u8) -> Result<(), Box<dyn std::error::Error>> {
+pub fn assign_trust_level(key_id: &str, trust_level: u8) -> Result<()> {
     let set_trust = Command::new("gpg")
         .args(vec![
             "--batch",
