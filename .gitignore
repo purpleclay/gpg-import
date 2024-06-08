@@ -1,1 +1,27 @@
-/target
+# Ignore everything and selectively allow files
+*
+
+# Allow project files
+!.deepsource.toml
+!.dockerignore
+!.github/**/*
+!.gitignore
+!CODEOWNERS
+!CODE_OF_CONDUCT.md
+!Dockerfile*
+!LICENSE
+!README.md
+!scripts/*
+
+# Allow Nix files
+!.envrc
+!flake.nix
+!flake.lock
+
+# Allow Rust files
+!Cargo.toml
+!Cargo.lock
+!src/*.rs
+
+# Recurse through sub-directories applying the same patterns
+!*/

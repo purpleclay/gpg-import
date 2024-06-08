@@ -29,10 +29,10 @@ sh -c "$(curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scrip
 
 ```sh
 # macos
-gpg --armor --export-secret-key batman@dc.com | base64 | pbcopy
+gpg --armor --export-secret-key batman@dc.com | base64 -w 0 | pbcopy
 
 # linux
-gpg --armor --export-secret-key batman@dc.com | base64 | xclip
+gpg --armor --export-secret-key batman@dc.com | base64 -w 0  | xclip
 ```
 
 ## Quick Start
