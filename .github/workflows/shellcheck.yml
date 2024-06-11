@@ -6,10 +6,10 @@ on:
     paths:
       - "scripts/**"
   pull_request:
-    # branches:
-    #   - main
-    # paths:
-    #   - "scripts/**"
+    branches:
+      - main
+    paths:
+      - "scripts/**"
 
 permissions:
   contents: read
