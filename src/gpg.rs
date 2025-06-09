@@ -284,7 +284,7 @@ pub fn import_secret_key(key: &str) -> Result<String> {
     Ok(key.1)
 }
 
-/// Extracts internal details for a given GPG private key
+/// Extracts internal details for a given GPG private key and verifies its validity
 pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
     let gpg_key_details = Command::new("gpg")
         .args(vec![
@@ -299,6 +299,26 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
 
     let output = String::from_utf8(gpg_key_details.stdout)?;
     let key_details = output.parse::<GpgPrivateKey>()?;
+
+    let current_timestamp = Utc::now().timestamp();
+    if let Some(expiration_date) = key_details.secret_key.expiration_date {
+        if expiration_date <= current_timestamp {
+            bail!(
+                "GPG key has expired on {}",
+                Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
+            );
+        }
+    }
+
+    if let Some(expiration_date) = key_details.secret_subkey.expiration_date {
+        if expiration_date <= current_timestamp {
+            bail!(
+                "GPG subkey has expired on {}",
+                Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
+            );
+        }
+    }
+
     Ok(key_details)
 }
 

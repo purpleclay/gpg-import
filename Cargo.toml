@@ -12,7 +12,7 @@ strip = "debuginfo"
 [dependencies]
 anyhow = "1.0.86"
 base64 = "0.22.0"
-chrono = { version = "0.4.31", default-features = false, features = ["std"] }
+chrono = { version = "0.4.31", default-features = false, features = ["std", "clock"] }
 clap = { version = "4.4.8", features = ["derive", "env"] }
 git2 = { version = "0.19.0", default-features = false }
 hex = "0.4.3"

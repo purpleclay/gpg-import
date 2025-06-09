@@ -25,6 +25,7 @@
 
         buildInputs = with pkgs; [
           openssl
+          zlib
         ];
 
         nativeBuildInputs = with pkgs; [

@@ -19,7 +19,7 @@ struct Args {
     #[arg(short, long, env = "GPG_PASSPHRASE")]
     passphrase: Option<String>,
 
-    /// A level of trust to be associated with the owner of the GPG private key
+    /// A level of trust to associate with the GPG private key
     #[arg(short, long, env = "GPG_TRUST_LEVEL", value_enum)]
     trust_level: Option<TrustLevel>,
 
