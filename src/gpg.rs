@@ -172,22 +172,95 @@ impl FromStr for GpgPrivateKey {
 
 impl Display for GpgPrivateKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "fingerprint: {}", self.secret_key.fingerprint)?;
-        writeln!(f, "keygrip:     {}", self.secret_key.keygrip)?;
-        writeln!(f, "key_id:      {}", self.secret_key.key_id)?;
-        writeln!(f, "user:        {} <{}>", self.user_name, self.user_email)?;
-
-        let ct = Utc.timestamp_opt(self.secret_key.creation_date, 0).unwrap();
-        writeln!(f, "created_on:  {}", ct.to_rfc2822())?;
+        writeln!(
+            f,
+            "user:           {} <{}>",
+            self.user_name, self.user_email
+        )?;
+        writeln!(f, "fingerprint:    {}", self.secret_key.fingerprint)?;
+        writeln!(f, "keygrip:        {}", self.secret_key.keygrip)?;
+        writeln!(f, "key_id:         {}", self.secret_key.key_id)?;
+        writeln!(
+            f,
+            "created_on:     {}",
+            format_timestamp(self.secret_key.creation_date)
+        )?;
 
         if self.secret_key.expiration_date.is_some() {
-            let et = Utc
-                .timestamp_opt(self.secret_key.expiration_date.unwrap(), 0)
-                .unwrap();
-            writeln!(f, "expires_on:  {}", et.to_rfc2822())?;
+            writeln!(
+                f,
+                "expires_on:     {}",
+                format_expiration_in_days(self.secret_key.expiration_date.unwrap())
+            )?;
         }
-        writeln!(f, "sub_keygrip: {}", self.secret_subkey.keygrip)?;
-        writeln!(f, "sub_key_id:  {}", self.secret_subkey.key_id)?;
+        writeln!(f, "sub_keygrip:    {}", self.secret_subkey.keygrip)?;
+        writeln!(f, "sub_key_id:     {}", self.secret_subkey.key_id)?;
+        writeln!(
+            f,
+            "sub_created_on: {}",
+            format_timestamp(self.secret_subkey.creation_date)
+        )?;
+        if self.secret_subkey.expiration_date.is_some() {
+            writeln!(
+                f,
+                "sub_expires_on: {}",
+                format_expiration_in_days(self.secret_subkey.expiration_date.unwrap())
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn format_timestamp(secs_since_epoch: i64) -> String {
+    let dt = Utc.timestamp_opt(secs_since_epoch, 0).unwrap();
+    dt.to_rfc2822()
+}
+
+fn format_expiration_in_days(secs_since_epoch: i64) -> String {
+    let expires_on = Utc.timestamp_opt(secs_since_epoch, 0).unwrap();
+    let now = Utc::now();
+    let days_until_expiry = (expires_on - now).num_days();
+
+    let days_text = if days_until_expiry == 1 {
+        "in 1 day".to_string()
+    } else if days_until_expiry == 0 {
+        "expires today".to_string()
+    } else {
+        format!("in {} days", days_until_expiry)
+    };
+
+    format!("{} ({})", expires_on.to_rfc2822(), days_text)
+}
+
+impl Display for GpgKeyDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "fingerprint: {}", self.fingerprint)?;
+        writeln!(f, "keygrip:     {}", self.keygrip)?;
+        writeln!(f, "key_id:      {}", self.key_id)?;
+
+        let ct = Utc.timestamp_opt(self.creation_date, 0).unwrap();
+        writeln!(f, "created_on:  {}", ct.to_rfc2822())?;
+
+        if self.expiration_date.is_some() {
+            let expires_on = Utc.timestamp_opt(self.expiration_date.unwrap(), 0).unwrap();
+            let now = Utc::now();
+            let days_until_expiry = (expires_on - now).num_days();
+
+            let days_text = if days_until_expiry == 1 {
+                "in 1 day".to_string()
+            } else if days_until_expiry == 0 {
+                "expires today".to_string()
+            } else {
+                format!("in {} days", days_until_expiry)
+            };
+
+            writeln!(
+                f,
+                "expires_on:  {} ({})",
+                expires_on.to_rfc2822(),
+                days_text
+            )?;
+        }
         Ok(())
     }
 }
