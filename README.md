@@ -43,29 +43,32 @@ For seamless integration into your CI platform, set the `GPG_PRIVATE_KEY` and an
 $ gpg-import
 
 > Detected GnuPG:
-version: 2.4.1 (libgcrypt: 1.10.2)
+version: 2.4.5 (libgcrypt: 1.10.3)
 homedir: /root/.gnupg
 
 > Imported GPG key:
-fingerprint: 241315DDAB6865162C0389BFE5389A1079D5A52F
-keygrip:     147098685499F4C183A39CA1A51CDE6316DDD479
-key_id:      E5389A1079D5A52F
-user:        batman <batman@dc.com>
-created_on:  Tue, 09 May 2023 19:39:26 +0000
-sub_keygrip: A213D84D786B8DBED68195C178B650CD24B88B2D
-sub_key_id:  2D219DD41933A2D5
+user:           batman <batman@dc.com>
+fingerprint:    85E1AA4D4F9FE316A8F452DDEF48BE1DFBFA8BA5
+keygrip:        99A0B6DD933CC25D0DC8D36299B4F51A9E3DD8C9
+key_id:         EF48BE1DFBFA8BA5
+created_on:     Wed, 11 Jun 2025 04:36:06 +0000
+expires_on:     Thu, 11 Jun 2026 04:36:06 +0000 (in 364 days)
+sub_keygrip:    A6780D53C3236724F960FD8AC07848F38C66CF48
+sub_key_id:     008183F9F50359D1
+sub_created_on: Wed, 11 Jun 2025 04:36:06 +0000
+sub_expires_on: Fri, 11 Jul 2025 04:36:59 +0000 (in 29 days)
 
 > Setting Passphrase:
-keygrip: 147098685499F4C183A39CA1A51CDE6316DDD479 [E5389A1079D5A52F]
-keygrip: A213D84D786B8DBED68195C178B650CD24B88B2D [2D219DD41933A2D5]
+keygrip: 99A0B6DD933CC25D0DC8D36299B4F51A9E3DD8C9 [EF48BE1DFBFA8BA5]
+keygrip: A6780D53C3236724F960FD8AC07848F38C66CF48 [008183F9F50359D1]
 
 > Setting Trust Level:
-trust_level: 5 [E5389A1079D5A52F]
+trust_level: 5 [EF48BE1DFBFA8BA5]
 
 > Git config set:
 user.name:       batman
 user.email:      batman@dc.com
-user.signingKey: E5389A1079D5A52F
+user.signingKey: AE799E2DEB4AFE11
 commit.gpgsign:  true
 tag.gpgsign:     true
 push.gpgsign:    if-asked
