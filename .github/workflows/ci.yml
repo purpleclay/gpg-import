@@ -55,7 +55,8 @@ jobs:
       - name: Cargo Clippy
         uses: actions-rs/cargo@v1
         with:
-          command: clippy -- -Dwarnings
+          command: clippy
+          args: -- -Dwarnings
 
   test:
     runs-on: ${{ matrix.os }}
