@@ -61,7 +61,7 @@ fn main() -> Result<()> {
     println!("> Detected GnuPG:");
     println!("{}", info);
 
-    let key_id = gpg::import_secret_key(&args.key.trim())?;
+    let key_id = gpg::import_secret_key(args.key.trim())?;
     let private_key = gpg::extract_key_info(&key_id)?;
     println!("> Imported GPG key:");
     println!("{}", private_key);
@@ -71,8 +71,8 @@ fn main() -> Result<()> {
 
     if let Some(passphrase) = args.passphrase {
         let passphrase_cleaned = passphrase.trim();
-        gpg::preset_passphrase(&private_key.secret_key.keygrip, &passphrase_cleaned)?;
-        gpg::preset_passphrase(&private_key.secret_subkey.keygrip, &passphrase_cleaned)?;
+        gpg::preset_passphrase(&private_key.secret_key.keygrip, passphrase_cleaned)?;
+        gpg::preset_passphrase(&private_key.secret_subkey.keygrip, passphrase_cleaned)?;
 
         println!("> Setting Passphrase:");
         println!(

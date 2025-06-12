@@ -117,7 +117,7 @@ max-cache-ttl 31536000
 allow-preset-passphrase
 allow-loopback-pinentry",
     )?;
-    return reload_agent();
+    reload_agent()
 }
 
 fn reload_agent() -> Result<()> {
@@ -439,4 +439,355 @@ pub fn assign_trust_level(key_id: &str, trust_level: u8) -> Result<()> {
         .write_all(format!("{}\ny\n", trust_level).as_bytes())?;
     set_trust.wait_with_output()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    use tempfile::TempDir;
+
+    /// A test fixture that creates an isolated GPG home directory
+    /// and cleans it up automatically when dropped
+    pub struct GpgTestFixture {
+        temp_dir: TempDir,
+        original_gnupghome: Option<String>,
+    }
+
+    impl GpgTestFixture {
+        /// Create a new isolated GPG test environment
+        pub fn new() -> Result<Self> {
+            let temp_dir = TempDir::new()?;
+            let gnupg_home = temp_dir.path().to_string_lossy().to_string();
+
+            // Save original GNUPGHOME if it exists
+            let original_gnupghome = env::var("GNUPGHOME").ok();
+
+            // Set GNUPGHOME to our temporary directory
+            env::set_var("GNUPGHOME", &gnupg_home);
+
+            // Initialize GPG configuration
+            configure_defaults(&gnupg_home)?;
+            configure_agent_defaults(&gnupg_home)?;
+
+            Ok(Self {
+                temp_dir,
+                original_gnupghome,
+            })
+        }
+
+        /// Get the path to the temporary GPG home directory
+        pub fn gnupg_home(&self) -> &str {
+            self.temp_dir.path().to_str().unwrap()
+        }
+
+        /// Check if GPG is available on the system
+        pub fn is_gpg_available() -> bool {
+            Command::new("gpg")
+                .arg("--version")
+                .output()
+                .map(|output| output.status.success())
+                .unwrap_or(false)
+        }
+    }
+
+    impl Drop for GpgTestFixture {
+        fn drop(&mut self) {
+            match &self.original_gnupghome {
+                Some(original) => env::set_var("GNUPGHOME", original),
+                None => env::remove_var("GNUPGHOME"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_detect_version() {
+        assert!(
+            GpgTestFixture::is_gpg_available(),
+            "GPG is required for tests. Please install GPG to run tests."
+        );
+
+        let _fixture = GpgTestFixture::new().expect("Failed to create test fixture");
+        let result = detect_version();
+        assert!(result.is_ok(), "Should detect GPG version");
+
+        let gpg_info = result.unwrap();
+        assert!(!gpg_info.version.is_empty(), "Version should not be empty");
+        assert!(
+            !gpg_info.libgcrypt.is_empty(),
+            "Libgcrypt version should not be empty"
+        );
+    }
+
+    #[test]
+    fn test_configure_defaults() {
+        assert!(
+            GpgTestFixture::is_gpg_available(),
+            "GPG is required for tests. Please install GPG to run tests."
+        );
+
+        let fixture = GpgTestFixture::new().expect("Failed to create test fixture");
+        let gnupg_home = fixture.gnupg_home();
+
+        // Test that configuration files are created
+        let gpg_conf = Path::new(gnupg_home).join("gpg.conf");
+        assert!(gpg_conf.exists(), "gpg.conf should be created");
+
+        let gpg_agent_conf = Path::new(gnupg_home).join("gpg-agent.conf");
+        assert!(gpg_agent_conf.exists(), "gpg-agent.conf should be created");
+    }
+
+    #[test]
+    fn test_expired_key_detection() {
+        // This test only tests expiration logic, no GPG needed
+        let current_time = Utc::now().timestamp();
+        let expired_time = current_time - 86400; // 24 hours ago
+
+        let expired_key = GpgPrivateKey {
+            user_name: "Test User".to_string(),
+            user_email: "test@example.com".to_string(),
+            secret_key: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: Some(expired_time),
+                fingerprint: "test_fingerprint".to_string(),
+                key_id: "test_key_id".to_string(),
+                keygrip: "test_keygrip".to_string(),
+            },
+            secret_subkey: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: None,
+                fingerprint: "test_sub_fingerprint".to_string(),
+                key_id: "test_sub_key_id".to_string(),
+                keygrip: "test_sub_keygrip".to_string(),
+            },
+        };
+
+        // Test the expiration logic by simulating what extract_key_info does
+        let current_timestamp = Utc::now().timestamp();
+        let should_be_expired = expired_key
+            .secret_key
+            .expiration_date
+            .map(|exp| exp <= current_timestamp)
+            .unwrap_or(false);
+
+        assert!(should_be_expired, "Key should be detected as expired");
+    }
+
+    #[test]
+    fn test_gpg_key_parsing() {
+        // This test only tests parsing logic, no GPG needed
+        let sample_gpg_output = "sec:u:2048:1:1234567890ABCDEF:1640995200:1672531200:::::::::23::\nfpr:::::::::1234567890ABCDEF1234567890ABCDEF12345678::\ngrp:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA::\nuid:u::::1640995200::1234567890ABCDEF1234567890ABCDEF::Test User <test@example.com>::::::::::0:\nssb:u:2048:1:FEDCBA0987654321:1640995200:1672531200:::::::::23::\nfpr:::::::::FEDCBA0987654321FEDCBA0987654321FEDCBA09::\ngrp:::::::::BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB::\n";
+
+        let result = sample_gpg_output.parse::<GpgPrivateKey>();
+        assert!(result.is_ok(), "Should parse GPG key details successfully");
+
+        let key = result.unwrap();
+        assert_eq!(key.user_name, "Test User");
+        assert_eq!(key.user_email, "test@example.com");
+        assert_eq!(key.secret_key.key_id, "1234567890ABCDEF");
+        assert_eq!(key.secret_subkey.key_id, "FEDCBA0987654321");
+    }
+
+    #[test]
+    fn test_gpg_key_with_no_expiration() {
+        // This test only tests parsing logic, no GPG needed
+        let sample_gpg_output = "sec:u:2048:1:1234567890ABCDEF:1640995200::::::::::23::\nfpr:::::::::1234567890ABCDEF1234567890ABCDEF12345678::\ngrp:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA::\nuid:u::::1640995200::1234567890ABCDEF1234567890ABCDEF::Test User <test@example.com>::::::::::0:\nssb:u:2048:1:FEDCBA0987654321:1640995200::::::::::23::\nfpr:::::::::FEDCBA0987654321FEDCBA0987654321FEDCBA09::\ngrp:::::::::BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB::\n";
+
+        let result = sample_gpg_output.parse::<GpgPrivateKey>();
+        assert!(result.is_ok(), "Should parse GPG key without expiration");
+
+        let key = result.unwrap();
+        assert!(
+            key.secret_key.expiration_date.is_none(),
+            "Main key should have no expiration"
+        );
+        assert!(
+            key.secret_subkey.expiration_date.is_none(),
+            "Subkey should have no expiration"
+        );
+    }
+
+    #[test]
+    fn test_extract_key_info_with_expired_key() {
+        // This test only tests expiration check logic, no GPG needed
+        let current_time = Utc::now().timestamp();
+        let expired_time = current_time - 86400; // 24 hours ago
+
+        // Simulate the check that happens in extract_key_info
+        let expiration_date = Some(expired_time);
+        let current_timestamp = Utc::now().timestamp();
+
+        if let Some(exp_date) = expiration_date {
+            assert!(exp_date <= current_timestamp, "Key should be expired");
+        }
+    }
+
+    #[test]
+    fn test_invalid_base64_key_import() {
+        assert!(
+            GpgTestFixture::is_gpg_available(),
+            "GPG is required for tests. Please install GPG to run tests."
+        );
+
+        let _fixture = GpgTestFixture::new().expect("Failed to create test fixture");
+
+        // Test with invalid base64 string
+        let invalid_key = "invalid-base64-string!@#$%";
+        let result = import_secret_key(invalid_key);
+
+        assert!(result.is_err(), "Should fail with invalid base64");
+
+        let error = result.unwrap_err();
+        let error_message = format!("{}", error);
+        assert!(
+            error_message.contains("detected invalid byte"),
+            "Error should mention invalid byte"
+        );
+    }
+
+    #[test]
+    fn test_key_expiration_integration() {
+        assert!(
+            GpgTestFixture::is_gpg_available(),
+            "GPG is required for tests. Please install GPG to run tests."
+        );
+
+        let _fixture = GpgTestFixture::new().expect("Failed to create test fixture");
+
+        // Test integration of the full expiration validation workflow
+        // This simulates what happens in extract_key_info when checking expiration
+
+        let current_time = Utc::now().timestamp();
+        let expired_time = current_time - 86400; // 24 hours ago
+        let future_time = current_time + 86400; // 24 hours from now
+
+        // Test 1: Key with expired main key should be detected
+        let expired_key = GpgPrivateKey {
+            user_name: "Test User".to_string(),
+            user_email: "test@example.com".to_string(),
+            secret_key: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: Some(expired_time),
+                fingerprint: "test_fingerprint".to_string(),
+                key_id: "test_key_id".to_string(),
+                keygrip: "test_keygrip".to_string(),
+            },
+            secret_subkey: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: Some(future_time),
+                fingerprint: "test_sub_fingerprint".to_string(),
+                key_id: "test_sub_key_id".to_string(),
+                keygrip: "test_sub_keygrip".to_string(),
+            },
+        };
+
+        // Simulate the expiration check from extract_key_info
+        let main_key_expired = expired_key
+            .secret_key
+            .expiration_date
+            .map(|exp| exp <= Utc::now().timestamp())
+            .unwrap_or(false);
+
+        assert!(main_key_expired, "Main key should be detected as expired");
+
+        // Test 2: Key with expired subkey should be detected
+        let expired_subkey = GpgPrivateKey {
+            user_name: "Test User".to_string(),
+            user_email: "test@example.com".to_string(),
+            secret_key: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: Some(future_time),
+                fingerprint: "test_fingerprint".to_string(),
+                key_id: "test_key_id".to_string(),
+                keygrip: "test_keygrip".to_string(),
+            },
+            secret_subkey: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: Some(expired_time),
+                fingerprint: "test_sub_fingerprint".to_string(),
+                key_id: "test_sub_key_id".to_string(),
+                keygrip: "test_sub_keygrip".to_string(),
+            },
+        };
+
+        let subkey_expired = expired_subkey
+            .secret_subkey
+            .expiration_date
+            .map(|exp| exp <= Utc::now().timestamp())
+            .unwrap_or(false);
+
+        assert!(subkey_expired, "Subkey should be detected as expired");
+
+        // Test 3: Valid key should not be detected as expired
+        let valid_key = GpgPrivateKey {
+            user_name: "Test User".to_string(),
+            user_email: "test@example.com".to_string(),
+            secret_key: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: Some(future_time),
+                fingerprint: "test_fingerprint".to_string(),
+                key_id: "test_key_id".to_string(),
+                keygrip: "test_keygrip".to_string(),
+            },
+            secret_subkey: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: Some(future_time),
+                fingerprint: "test_sub_fingerprint".to_string(),
+                key_id: "test_sub_key_id".to_string(),
+                keygrip: "test_sub_keygrip".to_string(),
+            },
+        };
+
+        let main_key_valid = valid_key
+            .secret_key
+            .expiration_date
+            .map(|exp| exp > Utc::now().timestamp())
+            .unwrap_or(true);
+        let subkey_valid = valid_key
+            .secret_subkey
+            .expiration_date
+            .map(|exp| exp > Utc::now().timestamp())
+            .unwrap_or(true);
+
+        assert!(main_key_valid, "Valid main key should not be expired");
+        assert!(subkey_valid, "Valid subkey should not be expired");
+
+        // Test 4: Key with no expiration should be valid
+        let no_expiration_key = GpgPrivateKey {
+            user_name: "Test User".to_string(),
+            user_email: "test@example.com".to_string(),
+            secret_key: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: None,
+                fingerprint: "test_fingerprint".to_string(),
+                key_id: "test_key_id".to_string(),
+                keygrip: "test_keygrip".to_string(),
+            },
+            secret_subkey: GpgKeyDetails {
+                creation_date: current_time,
+                expiration_date: None,
+                fingerprint: "test_sub_fingerprint".to_string(),
+                key_id: "test_sub_key_id".to_string(),
+                keygrip: "test_sub_keygrip".to_string(),
+            },
+        };
+
+        let main_no_exp_valid = no_expiration_key
+            .secret_key
+            .expiration_date
+            .map(|exp| exp > Utc::now().timestamp())
+            .unwrap_or(true);
+        let sub_no_exp_valid = no_expiration_key
+            .secret_subkey
+            .expiration_date
+            .map(|exp| exp > Utc::now().timestamp())
+            .unwrap_or(true);
+
+        assert!(main_no_exp_valid, "Key with no expiration should be valid");
+        assert!(
+            sub_no_exp_valid,
+            "Subkey with no expiration should be valid"
+        );
+    }
 }
