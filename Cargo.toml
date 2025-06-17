@@ -20,7 +20,7 @@ clap = { version = "4.4.8", features = ["derive", "env"] }
 git2 = { version = "0.20.0", default-features = false }
 hex = "0.4.3"
 nom = "7.1.3"
-thiserror = "1.0.61"
+thiserror = "2.0.0"
 
 [dev-dependencies]
 tempfile = "3.8"
