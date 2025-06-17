@@ -59,20 +59,20 @@ fn main() -> Result<()> {
 
     let info = gpg::detect_version()?;
     println!("> Detected GnuPG:");
-    println!("{}", info);
+    println!("{info}");
 
-    let key_id = gpg::import_secret_key(&args.key.trim())?;
+    let key_id = gpg::import_secret_key(args.key.trim())?;
     let private_key = gpg::extract_key_info(&key_id)?;
     println!("> Imported GPG key:");
-    println!("{}", private_key);
+    println!("{private_key}");
 
     gpg::configure_defaults(&info.home_dir)?;
     gpg::configure_agent_defaults(&info.home_dir)?;
 
     if let Some(passphrase) = args.passphrase {
         let passphrase_cleaned = passphrase.trim();
-        gpg::preset_passphrase(&private_key.secret_key.keygrip, &passphrase_cleaned)?;
-        gpg::preset_passphrase(&private_key.secret_subkey.keygrip, &passphrase_cleaned)?;
+        gpg::preset_passphrase(&private_key.secret_key.keygrip, passphrase_cleaned)?;
+        gpg::preset_passphrase(&private_key.secret_subkey.keygrip, passphrase_cleaned)?;
 
         println!("> Setting Passphrase:");
         println!(
@@ -108,7 +108,7 @@ fn main() -> Result<()> {
                 push_sign: true,
             };
             git::configure_signing(&repo, &git_cfg)?;
-            println!("{}", git_cfg);
+            println!("{git_cfg}");
         }
     }
     Ok(())

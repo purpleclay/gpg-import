@@ -26,10 +26,13 @@
         buildInputs = with pkgs; [
           openssl
           zlib
+          libfaketime
         ];
 
         nativeBuildInputs = with pkgs; [
-          rust-bin.stable.latest.default
+          (rust-bin.stable.latest.default.override{
+            extensions = ["rust-src" "cargo" "rustc"];
+          })
           pkg-config
         ]
         ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security ];

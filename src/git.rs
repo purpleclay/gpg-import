@@ -36,10 +36,7 @@ impl Display for SigningConfig {
 
 /// Determines if the current working directory is in fact a git repository
 pub fn is_repo() -> Option<Repository> {
-    match Repository::open(".") {
-        Ok(r) => Some(r),
-        Err(_) => None,
-    }
+    Repository::open(".").ok()
 }
 
 /// Configures the current repository to support GPG signing based on

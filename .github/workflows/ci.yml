@@ -56,6 +56,39 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
+          args: -- -Dwarnings
+
+  test:
+    runs-on: ${{ matrix.os }}
+    name: test / ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y faketime
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            brew install libfaketime
+          fi
+        shell: bash
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose
 
   build:
     runs-on: ${{ matrix.platform.runs-on }}
@@ -86,18 +119,6 @@ jobs:
           - name: darwin_aarch64
             runs-on: macos-latest
             target: aarch64-apple-darwin
-            use-cross: false
-          - name: windows_x86_64_msvc
-            runs-on: windows-latest
-            target: x86_64-pc-windows-msvc
-            use-cross: false
-          - name: windows_x86_64_gnu
-            runs-on: windows-latest
-            target: x86_64-pc-windows-gnu
-            use-cross: false
-          - name: windows_aarch64
-            runs-on: windows-latest
-            target: aarch64-pc-windows-msvc
             use-cross: false
     steps:
       - name: Checkout repository

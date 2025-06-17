@@ -117,7 +117,7 @@ max-cache-ttl 31536000
 allow-preset-passphrase
 allow-loopback-pinentry",
     )?;
-    return reload_agent();
+    reload_agent()
 }
 
 fn reload_agent() -> Result<()> {
@@ -226,43 +226,10 @@ fn format_expiration_in_days(secs_since_epoch: i64) -> String {
     } else if days_until_expiry == 0 {
         "expires today".to_string()
     } else {
-        format!("in {} days", days_until_expiry)
+        format!("in {days_until_expiry} days")
     };
 
     format!("{} ({})", expires_on.to_rfc2822(), days_text)
-}
-
-impl Display for GpgKeyDetails {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "fingerprint: {}", self.fingerprint)?;
-        writeln!(f, "keygrip:     {}", self.keygrip)?;
-        writeln!(f, "key_id:      {}", self.key_id)?;
-
-        let ct = Utc.timestamp_opt(self.creation_date, 0).unwrap();
-        writeln!(f, "created_on:  {}", ct.to_rfc2822())?;
-
-        if self.expiration_date.is_some() {
-            let expires_on = Utc.timestamp_opt(self.expiration_date.unwrap(), 0).unwrap();
-            let now = Utc::now();
-            let days_until_expiry = (expires_on - now).num_days();
-
-            let days_text = if days_until_expiry == 1 {
-                "in 1 day".to_string()
-            } else if days_until_expiry == 0 {
-                "expires today".to_string()
-            } else {
-                format!("in {} days", days_until_expiry)
-            };
-
-            writeln!(
-                f,
-                "expires_on:  {} ({})",
-                expires_on.to_rfc2822(),
-                days_text
-            )?;
-        }
-        Ok(())
-    }
 }
 
 fn parse_gpg_import(input: &str) -> IResult<&str, String> {
@@ -377,7 +344,7 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
     if let Some(expiration_date) = key_details.secret_key.expiration_date {
         if expiration_date <= current_timestamp {
             bail!(
-                "GPG key has expired on {}",
+                "GPG secret key has expired on {}",
                 Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
             );
         }
@@ -386,7 +353,7 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
     if let Some(expiration_date) = key_details.secret_subkey.expiration_date {
         if expiration_date <= current_timestamp {
             bail!(
-                "GPG subkey has expired on {}",
+                "GPG secret subkey has expired on {}",
                 Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
             );
         }
@@ -436,7 +403,81 @@ pub fn assign_trust_level(key_id: &str, trust_level: u8) -> Result<()> {
         .stdin
         .as_ref()
         .unwrap()
-        .write_all(format!("{}\ny\n", trust_level).as_bytes())?;
+        .write_all(format!("{trust_level}\ny\n").as_bytes())?;
     set_trust.wait_with_output()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use chrono::Duration;
+
+    fn generate_gpg_colon_format(
+        secret_key_creation: i64,
+        secret_key_expiration: i64,
+        secret_subkey_creation: i64,
+        secret_subkey_expiration: i64,
+    ) -> String {
+        format!(
+            "sec:u:4096:1:FDEFE8AB8796E127:{}:{}::u:::scESC:::+:::23::0:
+fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
+grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:
+uid:u::::{}::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::batman <batman@dc.com>::::::::::0:
+ssb:u:4096:1:BE6663F6A323FBE8:{}:{}:::::e:::+:::23:
+fpr:::::::::F36BE03211AF1D3CE26D8B3ABE6663F6A323FBE8:
+grp:::::::::4AC8E7E7FD8B405DF2761726D296F98C9B778875:",
+            secret_key_creation,
+            secret_key_expiration,
+            secret_key_creation,
+            secret_subkey_creation,
+            secret_subkey_expiration
+        )
+    }
+
+    #[test]
+    fn extract_key_info() {
+        let now = Utc::now();
+        let secret_key_expiration = now + Duration::days(10);
+        let secret_subkey_expiration = now + Duration::days(5);
+
+        let gpg_colon_format = generate_gpg_colon_format(
+            now.timestamp(),
+            secret_key_expiration.timestamp(),
+            now.timestamp(),
+            secret_subkey_expiration.timestamp(),
+        );
+
+        let result = gpg_colon_format.parse::<GpgPrivateKey>();
+        assert!(result.is_ok(), "Should parse GPG colon format");
+
+        let key = result.unwrap();
+        assert_eq!(key.user_name, "batman");
+        assert_eq!(key.user_email, "batman@dc.com");
+        assert_eq!(key.secret_key.creation_date, now.timestamp());
+        assert_eq!(
+            key.secret_key.expiration_date,
+            Some(secret_key_expiration.timestamp())
+        );
+        assert_eq!(
+            key.secret_key.fingerprint,
+            "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127"
+        );
+        assert_eq!(key.secret_key.key_id, "FDEFE8AB8796E127");
+        assert_eq!(
+            key.secret_key.keygrip,
+            "C4403DA4AF911084480BA46743E707CCDD082A24"
+        );
+        assert_eq!(key.secret_subkey.creation_date, now.timestamp());
+        assert_eq!(
+            key.secret_subkey.expiration_date,
+            Some(secret_subkey_expiration.timestamp())
+        );
+        assert_eq!(key.secret_subkey.key_id, "BE6663F6A323FBE8");
+        assert_eq!(
+            key.secret_subkey.keygrip,
+            "4AC8E7E7FD8B405DF2761726D296F98C9B778875"
+        );
+    }
 }
