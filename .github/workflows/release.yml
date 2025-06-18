@@ -35,18 +35,6 @@ jobs:
             runs-on: macos-latest
             target: aarch64-apple-darwin
             use-cross: false
-          - name: windows_x86_64_msvc
-            runs-on: windows-latest
-            target: x86_64-pc-windows-msvc
-            use-cross: false
-          - name: windows_x86_64_gnu
-            runs-on: windows-latest
-            target: x86_64-pc-windows-gnu
-            use-cross: false
-          - name: windows_aarch64
-            runs-on: windows-latest
-            target: aarch64-pc-windows-msvc
-            use-cross: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
