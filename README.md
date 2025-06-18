@@ -1,6 +1,6 @@
 # GPG Import
 
-Easily import a GPG key within any CI workflow. Runs on any Linux, MacOs or Windows build agent.
+Easily import a GPG key within any CI workflow. Runs on any Linux and MacOS build agent.
 
 ## Features
 
