@@ -7,8 +7,8 @@ use nom::{
     character::complete::not_line_ending,
     error::Error,
     multi::count,
-    sequence::{pair, separated_pair, tuple},
-    AsChar, Finish, IResult,
+    sequence::{pair, separated_pair},
+    AsChar, Finish, IResult, Parser,
 };
 use std::{
     fmt::{self, Display},
@@ -67,11 +67,12 @@ fn parse_gpg_info(input: &str) -> IResult<&str, GpgInfo> {
         ),
         tag(" "),
         not_line_ending,
-    )(input)?;
+    )
+    .parse(input)?;
     let (i, _) = take_until("libgcrypt")(i)?;
-    let (i, libgcrypt) = separated_pair(tag("libgcrypt"), tag(" "), not_line_ending)(i)?;
+    let (i, libgcrypt) = separated_pair(tag("libgcrypt"), tag(" "), not_line_ending).parse(i)?;
     let (i, _) = take_until("Home: ")(i)?;
-    let (i, home_dir) = separated_pair(tag("Home:"), tag(" "), not_line_ending)(i)?;
+    let (i, home_dir) = separated_pair(tag("Home:"), tag(" "), not_line_ending).parse(i)?;
 
     Ok((
         i,
@@ -234,29 +235,30 @@ fn format_expiration_in_days(secs_since_epoch: i64) -> String {
 
 fn parse_gpg_import(input: &str) -> IResult<&str, String> {
     let (i, _) = take_until("gpg: key ")(input)?;
-    let (i, key) = separated_pair(tag("gpg: key"), tag(" "), take_until(":"))(i)?;
+    let (i, key) = separated_pair(tag("gpg: key"), tag(" "), take_until(":")).parse(i)?;
     Ok((i, key.1.into()))
 }
 
 fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
-    let (i, _) = tuple((tag("sec"), count(pair(take_until(":"), tag(":")), 4)))(input)?;
-    let (i, sec) = count(pair(take_until(":"), tag(":")), 3)(i)?;
-    let (i, _) = tuple((take_until("fpr"), tag("fpr"), count(tag(":"), 9)))(i)?;
+    let (i, _) = (tag("sec"), count(pair(take_until(":"), tag(":")), 4)).parse(input)?;
+    let (i, sec) = count(pair(take_until(":"), tag(":")), 3).parse(i)?;
+    let (i, _) = (take_until("fpr"), tag("fpr"), count(tag(":"), 9)).parse(i)?;
     let (i, sec_fpr) = take_until(":")(i)?;
-    let (i, _) = tuple((take_until("grp"), tag("grp"), count(tag(":"), 9)))(i)?;
+    let (i, _) = (take_until("grp"), tag("grp"), count(tag(":"), 9)).parse(i)?;
     let (i, sec_grp) = take_until(":")(i)?;
-    let (i, _) = tuple((
+    let (i, _) = (
         take_until("uid"),
         tag("uid"),
         count(pair(take_until(":"), tag(":")), 9),
-    ))(i)?;
-    let (i, uid) = separated_pair(take_until(" <"), tag(" <"), take_until(">"))(i)?;
+    )
+        .parse(i)?;
+    let (i, uid) = separated_pair(take_until(" <"), tag(" <"), take_until(">")).parse(i)?;
     let (i, _) = take_until("ssb")(i)?;
-    let (i, _) = tuple((tag("ssb"), count(pair(take_until(":"), tag(":")), 4)))(i)?;
-    let (i, ssb) = count(pair(take_until(":"), tag(":")), 3)(i)?;
-    let (i, _) = tuple((take_until("fpr"), tag("fpr"), count(tag(":"), 9)))(i)?;
+    let (i, _) = (tag("ssb"), count(pair(take_until(":"), tag(":")), 4)).parse(i)?;
+    let (i, ssb) = count(pair(take_until(":"), tag(":")), 3).parse(i)?;
+    let (i, _) = (take_until("fpr"), tag("fpr"), count(tag(":"), 9)).parse(i)?;
     let (i, ssb_fpr) = take_until(":")(i)?;
-    let (i, _) = tuple((take_until("grp"), tag("grp"), count(tag(":"), 9)))(i)?;
+    let (i, _) = (take_until("grp"), tag("grp"), count(tag(":"), 9)).parse(i)?;
     let (i, ssb_grp) = take_until(":")(i)?;
 
     Ok((
