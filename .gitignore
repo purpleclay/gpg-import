@@ -25,6 +25,7 @@
 !tests/*.rs
 !tests/testdata/*.key
 !build.rs
+target/**/*
 
 # Recurse through sub-directories applying the same patterns
 !*/
