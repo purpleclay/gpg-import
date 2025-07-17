@@ -6,8 +6,8 @@
 : "${INSTALL_DIR:=/usr/local/bin}"
 
 APP_NAME="gpg-import"
-HAS_CURL="$(type curl >/dev/null && echo true || echo false)"
-HAS_WGET="$(type wget >/dev/null && echo true || echo false)"
+HAS_CURL="$(command -v curl >/dev/null 2>&1 && echo true || echo false)"
+HAS_WGET="$(command -v wget >/dev/null 2>&1 && echo true || echo false)"
 
 initTarget() {
   case "$(uname -s)" in
@@ -106,7 +106,7 @@ verify() {
   fi
 
   # Test version
-  INSTALLED_VERSION="$($APP_NAME -V)"
+  INSTALLED_VERSION="$($APP_NAME version --short)"
   if [ "${INSTALLED_VERSION}" != "${APP_NAME} ${TAG}" ]; then
     echo "Found version ${INSTALLED_VERSION} of ${APP_NAME} and not expected installed version of $TAG"
     exit 1
