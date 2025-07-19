@@ -8,8 +8,8 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "scripts/**"
+    # paths:
+    #   - "scripts/**"
 
 permissions:
   contents: read
@@ -19,10 +19,17 @@ jobs:
     runs-on: ubuntu-24.04
     name: shellcheck
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: ShellCheck
-        uses: ludeeus/action-shellcheck@master
+      - name: Install Nix
+        uses: cachix/install-nix-action@f0fe604f8a612776892427721526b4c7cfb23aba # v31
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
         with:
-          scandir: "./scripts"
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+
+      - name: Run ShellCheck
+        run: nix develop -c shellcheck scripts/*
