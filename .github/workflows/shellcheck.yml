@@ -30,6 +30,8 @@ jobs:
         with:
           name: purpleclay
           authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
 
       - name: Run ShellCheck
         run: nix develop -c shellcheck scripts/*
