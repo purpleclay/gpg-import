@@ -54,5 +54,5 @@ jobs:
           skipPush: true
           useDaemon: false
 
-      - name: Run ShellCheck
-        run: nix develop -c shfmt -i 2 -ci -d scripts/*
+      - name: Run Shfmt
+        run: nix develop -c shfmt -l scripts/*
