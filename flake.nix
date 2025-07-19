@@ -33,6 +33,8 @@
             extensions = ["rust-src" "cargo" "rustc"];
           })
           pkg-config
+          shellcheck
+          shfmt
         ]
         ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security ];
       in
