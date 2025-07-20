@@ -9,9 +9,9 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "src/**"
-      - "Cargo.*"
+    # paths:
+    #   - "src/**"
+    #   - "Cargo.*"
 
 permissions:
   contents: read
@@ -21,42 +21,83 @@ jobs:
     runs-on: ubuntu-24.04
     name: rustfmt / stable
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Nix
+        uses: cachix/install-nix-action@f0fe604f8a612776892427721526b4c7cfb23aba # v31
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
         with:
-          components: rustfmt
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
 
       - name: Cargo Format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --check
+        run: nix develop -c cargo fmt --check
 
   clippy:
-    runs-on: ubuntu-latest
-    name: clippy / ${{ matrix.toolchain }}
-    strategy:
-      fail-fast: false
-      matrix:
-        toolchain: [stable, beta]
+    runs-on: ubuntu-24.04
+    name: clippy / stable
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: Install ${{ matrix.toolchain }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Install Nix
+        uses: cachix/install-nix-action@f0fe604f8a612776892427721526b4c7cfb23aba # v31
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
         with:
-          toolchain: ${{ matrix.toolchain }}
-          components: clippy
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
 
       - name: Cargo Clippy
-        uses: actions-rs/cargo@v1
+        run: nix develop -c cargo clippy -- -Dwarnings
+
+  alejandra:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@f0fe604f8a612776892427721526b4c7cfb23aba # v31
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
         with:
-          command: clippy
-          args: -- -Dwarnings
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
+
+      - name: Run Alejandra
+        run: nix develop -c alejandra --check .
+
+  typos:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@f0fe604f8a612776892427721526b4c7cfb23aba # v31
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        with:
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
+
+      - name: Run Typos
+        run: nix develop -c typos
 
   test:
     runs-on: ${{ matrix.os }}
@@ -100,17 +141,9 @@ jobs:
             runs-on: ubuntu-latest
             target: x86_64-unknown-linux-musl
             use-cross: true
-          - name: linux_x86_64_gnu
-            runs-on: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            use-cross: true
           - name: linux_aarch64_musl
             runs-on: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            use-cross: true
-          - name: linux_aarch64_gnu
-            runs-on: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
             use-cross: true
           - name: darwin_x86_64
             runs-on: macos-latest
@@ -121,8 +154,8 @@ jobs:
             target: aarch64-apple-darwin
             use-cross: false
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable

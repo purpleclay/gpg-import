@@ -28,7 +28,7 @@
         inherit (nixpkgs) lib;
 
         rustToolchain = pkgs.rust-bin.stable."1.87.0".default.override {
-          extensions = ["rust-src" "cargo" "rustc"];
+          extensions = ["rust-src" "cargo" "rustc" "clippy" "rustfmt"];
         };
 
         rustPlatform = pkgs.makeRustPlatform {
