@@ -6,6 +6,7 @@
 !.dockerignore
 !.github/**/*
 !.gitignore
+!.zed/settings.json
 !CODEOWNERS
 !CODE_OF_CONDUCT.md
 !Dockerfile*
@@ -17,6 +18,7 @@
 !.envrc
 !flake.nix
 !flake.lock
+!default.nix
 
 # Allow Rust files
 !Cargo.toml
