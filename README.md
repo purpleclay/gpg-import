@@ -23,6 +23,14 @@ sh -c "$(curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scrip
   -- -v 0.3.0 --no-sudo -d ./bin
 ```
 
+## Run with Nix
+
+If you have nix installed, you can run the binary directly from the GitHub repository:
+
+```sh
+nix run github:purpleclay/gpg-import -- --help
+```
+
 ## Prerequisites
 
 [Generate](https://docs.github.com/en/authentication/managing-commit-signature-verification/generating-a-new-gpg-key) a GPG key and export it to your clipboard as a base64 encoded ASCII armored private key:
