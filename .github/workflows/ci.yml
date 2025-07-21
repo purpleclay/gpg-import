@@ -126,8 +126,8 @@ jobs:
       - name: Publish Summary
         if: always()
         run: |
-          nix develop -c cargo install cargo-test-report
-          nix develop -c cat test-results.json | cargo-test-report > $GITHUB_STEP_SUMMARY
+          nix develop -c cargo install markdown-test-report
+          nix develop -c cat test-results.json | markdown-test-report > $GITHUB_STEP_SUMMARY
 
   build:
     runs-on: ${{ matrix.platform.runs-on }}
