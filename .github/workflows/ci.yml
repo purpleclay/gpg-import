@@ -121,13 +121,7 @@ jobs:
           useDaemon: false
 
       - name: Run tests
-        run: nix develop -c cargo test -- -Z unstable-options --report-time --format json | tee test-results.json
-
-      - name: Publish Summary
-        if: always()
-        run: |
-          nix develop -c cargo install markdown-test-report
-          nix develop -c cat test-results.json | markdown-test-report > $GITHUB_STEP_SUMMARY
+        run: nix develop -c cargo test
 
   build:
     runs-on: ${{ matrix.platform.runs-on }}
