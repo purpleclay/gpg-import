@@ -38,10 +38,13 @@
 
         buildInputs = with pkgs; [
           alejandra
+          libfaketime
           nil
           openssl
+          shellcheck
+          shfmt
+          typos
           zlib
-          libfaketime
         ];
 
         nativeBuildInputs = with pkgs;
