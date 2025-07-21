@@ -1,0 +1,12 @@
+[default.extend-words]
+fpr = "fpr"
+
+[default]
+extend-ignore-identifiers-re = [
+    # GPG key IDs (8 or 16 hex chars)
+    "^[0-9A-F]{8}([0-9A-F]{8})?$",
+    # GPG fingerprints (40 hex chars)
+    "^[0-9A-F]{40}$",
+    # Git commit hashes
+    "^[0-9a-f]{7,40}$",
+]

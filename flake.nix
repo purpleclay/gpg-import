@@ -40,6 +40,7 @@
           alejandra
           libfaketime
           nil
+          nodePackages.prettier
           openssl
           shellcheck
           shfmt
