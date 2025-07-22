@@ -69,22 +69,19 @@
           devShells.default = mkShell {
             inherit buildInputs nativeBuildInputs;
 
-            # # Environment variables for cargo-zigbuild cross-compilation
-            # CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs.zig}/bin/zig";
-            # CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs.zig}/bin/zig";
-            # CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "${pkgs.zig}/bin/zig";
-            # CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${pkgs.zig}/bin/zig";
+            # Environment variables for cargo-zigbuild cross-compilation
+            CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs.zig}/bin/zig";
+            CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs.zig}/bin/zig";
+            CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "${pkgs.zig}/bin/zig";
+            CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${pkgs.zig}/bin/zig";
 
-            # # Use vendor mode for libgit2 to avoid cross-compilation issues
-            # LIBGIT2_SYS_USE_PKG_CONFIG = "0";
+            # Provide include paths for cross-compilation
+            C_INCLUDE_PATH = "${pkgs.zlib.dev}/include";
+            CPATH = "${pkgs.zlib.dev}/include";
 
-            # # Provide include paths for cross-compilation
-            # C_INCLUDE_PATH = "${pkgs.zlib.dev}/include";
-            # CPATH = "${pkgs.zlib.dev}/include";
-
-            # # Target-specific RUSTFLAGS for static linking (only for musl targets)
-            # CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS = "-C target-feature=+crt-static";
-            # CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS = "-C target-feature=+crt-static";
+            # Target-specific RUSTFLAGS for static linking (only for musl targets)
+            CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS = "-C target-feature=+crt-static";
+            CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS = "-C target-feature=+crt-static";
           };
 
           packages.default = pkgs.callPackage ./default.nix {
