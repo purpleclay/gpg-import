@@ -1,7 +1,6 @@
 name: nsv
 on:
   workflow_dispatch:
-
 jobs:
   nsv:
     runs-on: ubuntu-24.04

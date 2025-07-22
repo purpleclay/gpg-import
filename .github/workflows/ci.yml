@@ -124,42 +124,33 @@ jobs:
         run: nix develop -c cargo test
 
   build:
-    runs-on: ${{ matrix.platform.runs-on }}
+    runs-on: ubuntu-24.04
     name: build / ${{ matrix.platform.name }}
     strategy:
       matrix:
         platform:
           - name: linux_x86_64_musl
-            runs-on: ubuntu-24.04
             target: x86_64-unknown-linux-musl
-            use-cross: true
           - name: linux_aarch64_musl
-            runs-on: ubuntu-24.04
             target: aarch64-unknown-linux-musl
-            use-cross: true
           - name: darwin_x86_64
-            runs-on: macos-latest
             target: x86_64-apple-darwin
-            use-cross: false
           - name: darwin_aarch64
-            runs-on: macos-latest
             target: aarch64-apple-darwin
-            use-cross: false
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform.target }}
+      - name: Install Nix
+        uses: cachix/install-nix-action@f0fe604f8a612776892427721526b4c7cfb23aba # v31
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        with:
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: ${{ matrix.platform.use-cross }}
-          command: build
-          args: --locked --release --target ${{ matrix.platform.target }}
+        run: nix develop -c cargo zigbuild --locked --release --target ${{ matrix.platform.target }}

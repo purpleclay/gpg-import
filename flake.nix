@@ -29,6 +29,12 @@
 
         rustToolchain = pkgs.rust-bin.stable."1.87.0".default.override {
           extensions = ["rust-src" "cargo" "rustc" "clippy" "rustfmt"];
+          targets = [
+            "x86_64-unknown-linux-musl"
+            "aarch64-unknown-linux-musl"
+            "x86_64-apple-darwin"
+            "aarch64-apple-darwin"
+          ];
         };
 
         rustPlatform = pkgs.makeRustPlatform {
@@ -38,6 +44,7 @@
 
         buildInputs = with pkgs; [
           alejandra
+          cargo-zigbuild
           libfaketime
           nil
           nodePackages.prettier
@@ -45,6 +52,7 @@
           shellcheck
           shfmt
           typos
+          zig
           zlib
         ];
 
