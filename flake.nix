@@ -66,6 +66,18 @@
         with pkgs; {
           devShells.default = mkShell {
             inherit buildInputs nativeBuildInputs;
+
+            # Environment variables for cargo-zigbuild cross-compilation
+            CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs.zig}/bin/zig";
+            CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs.zig}/bin/zig";
+            CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "${pkgs.zig}/bin/zig";
+            CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${pkgs.zig}/bin/zig";
+
+            # Use vendor mode for libgit2 to avoid cross-compilation issues
+            LIBGIT2_SYS_USE_PKG_CONFIG = "0";
+
+            # Static linking for musl targets
+            RUSTFLAGS = "-C target-feature=+crt-static";
           };
 
           packages.default = pkgs.callPackage ./default.nix {
