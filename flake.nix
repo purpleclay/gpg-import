@@ -49,7 +49,6 @@
           nil
           nodePackages.prettier
           openssl
-          pkgconfig
           shellcheck
           shfmt
           typos
