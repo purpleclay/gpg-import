@@ -29,21 +29,14 @@
 
         rustToolchain = pkgs.rust-bin.stable."1.87.0".default.override {
           extensions = ["rust-src" "cargo" "rustc" "clippy" "rustfmt"];
-          targets = [
-            "x86_64-apple-darwin"
-            "aarch64-apple-darwin"
-          ];
         };
 
         rustPlatform = pkgs.makeRustPlatform {
           cargo = rustToolchain;
           rustc = rustToolchain;
         };
-
         buildInputs = with pkgs; [
           alejandra
-          cargo-zigbuild
-          goreleaser
           libfaketime
           nil
           nodePackages.prettier
@@ -52,7 +45,6 @@
           shfmt
           typos
           zlib
-          zig
         ];
 
         nativeBuildInputs = with pkgs;
@@ -60,7 +52,9 @@
             rustToolchain
             pkg-config
           ]
-          ++ lib.optionals stdenv.isDarwin [darwin.apple_sdk.frameworks.Security];
+          ++ lib.optionals stdenv.isDarwin [
+            darwin.apple_sdk.frameworks.Security
+          ];
       in
         with pkgs; {
           devShells.default = mkShell {
