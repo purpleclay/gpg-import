@@ -28,20 +28,23 @@
         inherit (nixpkgs) lib;
 
         rustToolchain = pkgs.rust-bin.stable."1.87.0".default.override {
-          extensions = ["rust-src" "cargo" "rustc"];
+          extensions = ["rust-src" "cargo" "rustc" "clippy" "rustfmt"];
         };
 
         rustPlatform = pkgs.makeRustPlatform {
           cargo = rustToolchain;
           rustc = rustToolchain;
         };
-
         buildInputs = with pkgs; [
           alejandra
-          nil
-          openssl
-          zlib
           libfaketime
+          nil
+          nodePackages.prettier
+          openssl
+          shellcheck
+          shfmt
+          typos
+          zlib
         ];
 
         nativeBuildInputs = with pkgs;
@@ -49,7 +52,9 @@
             rustToolchain
             pkg-config
           ]
-          ++ lib.optionals stdenv.isDarwin [darwin.apple_sdk.frameworks.Security];
+          ++ lib.optionals stdenv.isDarwin [
+            darwin.apple_sdk.frameworks.Security
+          ];
       in
         with pkgs; {
           devShells.default = mkShell {
