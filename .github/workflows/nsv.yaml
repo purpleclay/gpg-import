@@ -29,7 +29,6 @@ jobs:
           GPG_PASSPHRASE: "${{ secrets.GPG_PASSPHRASE }}"
         run: nix run github:purpleclay/gpg-import
 
-      # TODO: this tag needs to be updated by Renovate
       - name: Tag
         env:
           NSV_VERSION: "v0.12.1"
