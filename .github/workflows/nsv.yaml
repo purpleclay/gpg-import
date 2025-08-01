@@ -1,27 +1,38 @@
 name: nsv
 on:
   workflow_dispatch:
-
 jobs:
   nsv:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_NSV }}
 
-      - name: Tag
-        uses: dagger/dagger-for-github@v7
+      - name: Install Nix
+        uses: cachix/install-nix-action@f0fe604f8a612776892427721526b4c7cfb23aba # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        with:
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+
+      - name: GPG Import
         env:
           # skipcq: SCT-A000
           GPG_PRIVATE_KEY: "${{ secrets.GPG_PRIVATE_KEY }}"
           GPG_PASSPHRASE: "${{ secrets.GPG_PASSPHRASE }}"
-        with:
-          verb: call
-          module: github.com/purpleclay/daggerverse/nsv@v0.12.0
-          args: --src . tag --show --gpg-private-key env:GPG_PRIVATE_KEY --gpg-passphrase env:GPG_PASSPHRASE
-          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+        run: nix run github:purpleclay/gpg-import
+
+      - name: Tag
+        env:
+          # renovate: datasource=github-tags depName=purpleclay/nsv
+          NSV_VERSION: "v0.12.1"
+        run: nix run github:purpleclay/nsv/${NSV_VERSION} -- tag --show
