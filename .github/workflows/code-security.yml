@@ -1,5 +1,4 @@
 name: code security
-
 on:
   push:
     branches:
@@ -15,22 +14,20 @@ on:
       - "Cargo.*"
   schedule:
     - cron: "0 5 * * *"
-
 jobs:
   trivy-scan:
     name: code scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: read
       security-events: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
         with:
           scan-type: fs
           scan-ref: "."
@@ -39,6 +36,6 @@ jobs:
           output: trivy-results.sarif
 
       - name: Upload Report
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@181d5eefc20863364f96762470ba6f862bdef56b # v3
         with:
           sarif_file: trivy-results.sarif

@@ -10,19 +10,51 @@ on:
       - main
     paths:
       - "scripts/**"
-
 permissions:
   contents: read
-
 jobs:
   shellcheck:
     runs-on: ubuntu-24.04
     name: shellcheck
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: ShellCheck
-        uses: ludeeus/action-shellcheck@master
+      - name: Install Nix
+        uses: cachix/install-nix-action@f0fe604f8a612776892427721526b4c7cfb23aba # v31
         with:
-          scandir: "./scripts"
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        with:
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
+
+      - name: Run ShellCheck
+        run: nix develop -c shellcheck scripts/*
+
+  shfmt:
+    runs-on: ubuntu-24.04
+    name: shfmt
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@f0fe604f8a612776892427721526b4c7cfb23aba # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        with:
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
+
+      - name: Run Shfmt
+        run: nix develop -c shfmt -l scripts/*

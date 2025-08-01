@@ -46,28 +46,28 @@ initTarget() {
   esac
 
   case "$(uname -s)" in
-  "Linux")
-    platform="unknown-linux-musl"
-    TARGET="$arch-$platform"
-    ;;
-  "Darwin")
-    platform="apple-darwin"
-    TARGET="$arch-$platform"
-    ;;
+    "Linux")
+      platform="unknown-linux-musl"
+      TARGET="$arch-$platform"
+      ;;
+    "Darwin")
+      platform="apple-darwin"
+      TARGET="$arch-$platform"
+      ;;
   esac
 }
 
 checkPrerequisites() {
-    debug "Checking supported target..."
-    _supported="x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin"
-    if ! echo "${_supported}" | grep -qw "${TARGET}"; then
-      error "No prebuilt binary currently exists for target ${TARGET}."
-    fi
+  debug "Checking supported target..."
+  _supported="x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin"
+  if ! echo "${_supported}" | grep -qw "${TARGET}"; then
+    error "No prebuilt binary currently exists for target ${TARGET}."
+  fi
 
-    debug "Checking download utility..."
-    if [ "${HAS_CURL}" != "true" ] && [ "${HAS_WGET}" != "true" ]; then
-      error "Either curl or wget is required to download binary. Please install and try again"
-    fi
+  debug "Checking download utility..."
+  if [ "${HAS_CURL}" != "true" ] && [ "${HAS_WGET}" != "true" ]; then
+    error "Either curl or wget is required to download binary. Please install and try again"
+  fi
 }
 
 download() {
@@ -212,39 +212,39 @@ done
 set -u
 while [ $# -gt 0 ]; do
   case $1 in
-  '--debug')
-    DEBUG="true"
-    ;;
-  '--dir' | -d)
-    shift
-    if [ $# -eq 0 ]; then
-      error "Please provide a valid location for the install directory"
-    fi
+    '--debug')
+      DEBUG="true"
+      ;;
+    '--dir' | -d)
+      shift
+      if [ $# -eq 0 ]; then
+        error "Please provide a valid location for the install directory"
+      fi
 
-    if [ ! -d "${1}" ]; then
-      error "Directory ${1} does not exist"
-    fi
+      if [ ! -d "${1}" ]; then
+        error "Directory ${1} does not exist"
+      fi
 
-    INSTALL_DIR="${1}"
-    ;;
-  '--no-sudo')
-    USE_SUDO="false"
-    ;;
-  '--skip-verify')
-    VERIFY="false"
-    ;;
-  '--version' | -v)
-    shift
-    if [ $# -eq 0 ]; then
-      error "Please provide a valid version: e.g. --version $(getLatestRelease)"
-    fi
-    GPG_IMPORT_VERSION="${1}"
-    ;;
-  *)
-    error \
-      "Invalid flag provided '$1'." \
-      "Run '$0 --help' to see the available options"
-    ;;
+      INSTALL_DIR="${1}"
+      ;;
+    '--no-sudo')
+      USE_SUDO="false"
+      ;;
+    '--skip-verify')
+      VERIFY="false"
+      ;;
+    '--version' | -v)
+      shift
+      if [ $# -eq 0 ]; then
+        error "Please provide a valid version: e.g. --version $(getLatestRelease)"
+      fi
+      GPG_IMPORT_VERSION="${1}"
+      ;;
+    *)
+      error \
+        "Invalid flag provided '$1'." \
+        "Run '$0 --help' to see the available options"
+      ;;
   esac
   shift
 done
