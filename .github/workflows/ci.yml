@@ -9,9 +9,9 @@ on:
   pull_request:
     branches:
       - main
-    # paths:
-    #   - "src/**"
-    #   - "Cargo.*"
+    paths:
+      - "src/**"
+      - "Cargo.*"
 permissions:
   contents: read
 jobs:
