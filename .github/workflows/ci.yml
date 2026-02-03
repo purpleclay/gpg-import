@@ -5,22 +5,31 @@ on:
       - main
     paths:
       - "src/**"
-      - "Cargo.*"
+      - "tests/**"
+      - "Cargo.lock"
   pull_request:
     branches:
       - main
     paths:
       - "src/**"
-      - "Cargo.*"
+      - "tests/**"
+      - "Cargo.lock"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+  pull-requests: read
 jobs:
   rustfmt:
     runs-on: ubuntu-24.04
+    if: github.actor != 'renovate[bot]'
     name: rustfmt / stable
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
@@ -43,7 +52,7 @@ jobs:
     name: clippy / stable
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
@@ -57,31 +66,41 @@ jobs:
           authToken: "${{ secrets.GH_CACHIX }}"
           skipPush: true
           useDaemon: false
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        with:
+          shared-key: "clippy"
 
       - name: Cargo Clippy
         run: nix develop -c cargo clippy -- -Dwarnings
 
-  typos:
+  build-fast:
     runs-on: ubuntu-24.04
+    if: github.event_name == 'pull_request'
+    name: build-fast / linux_x86_64_musl
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
         with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          targets: x86_64-unknown-linux-musl
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
-          name: purpleclay
-          authToken: "${{ secrets.GH_CACHIX }}"
-          skipPush: true
-          useDaemon: false
+          version: 0.13.0
 
-      - name: Run Typos
-        run: nix develop -c typos
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild
+
+      - name: Cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      - name: Build with zigbuild
+        run: cargo zigbuild --locked --release --target x86_64-unknown-linux-musl
 
   test:
     runs-on: ${{ matrix.os }}
@@ -91,7 +110,7 @@ jobs:
         os: [ubuntu-24.04, macos-15]
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
@@ -106,11 +125,17 @@ jobs:
           skipPush: true
           useDaemon: false
 
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        with:
+          shared-key: "test-${{ matrix.os }}"
+
       - name: Run tests
-        run: nix develop -c cargo test
+        run: nix develop -c cargo nextest run
 
   build:
     runs-on: ${{ matrix.platform.runs-on }}
+    if: github.ref == 'refs/heads/main'
     name: build / ${{ matrix.platform.name }}
     strategy:
       matrix:
@@ -118,34 +143,45 @@ jobs:
           - name: linux_x86_64_musl
             runs-on: ubuntu-24.04
             target: x86_64-unknown-linux-musl
-            use-cross: true
+            use-zigbuild: true
           - name: linux_aarch64_musl
             runs-on: ubuntu-24.04
             target: aarch64-unknown-linux-musl
-            use-cross: true
+            use-zigbuild: true
           - name: darwin_x86_64
             runs-on: macos-15
             target: x86_64-apple-darwin
-            use-cross: false
+            use-zigbuild: false
           - name: darwin_aarch64
             runs-on: macos-15
             target: aarch64-apple-darwin
-            use-cross: false
+            use-zigbuild: false
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform.target }}
 
-      - name: Cache
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
-
-      - name: Build
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1
+      - name: Setup Zig
+        if: ${{ matrix.platform.use-zigbuild }}
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
-          use-cross: ${{ matrix.platform.use-cross }}
-          command: build
-          args: --locked --release --target ${{ matrix.platform.target }}
+          version: 0.13.0
+
+      - name: Install cargo-zigbuild
+        if: ${{ matrix.platform.use-zigbuild }}
+        run: cargo install cargo-zigbuild
+
+      - name: Cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      - name: Build with zigbuild
+        if: ${{ matrix.platform.use-zigbuild }}
+        run: cargo zigbuild --locked --release --target ${{ matrix.platform.target }}
+
+      - name: Build with cargo
+        if: ${{ !matrix.platform.use-zigbuild }}
+        run: cargo build --locked --release --target ${{ matrix.platform.target }}
