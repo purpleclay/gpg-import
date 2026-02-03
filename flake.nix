@@ -10,6 +10,13 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
+
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+      };
+    };
   };
 
   outputs = {
@@ -17,6 +24,7 @@
     nixpkgs,
     flake-utils,
     rust-overlay,
+    git-hooks,
   }:
     flake-utils.lib.eachDefaultSystem (
       system: let
@@ -35,6 +43,7 @@
           cargo = rustToolchain;
           rustc = rustToolchain;
         };
+
         buildInputs = with pkgs; [
           alejandra
           libfaketime
@@ -47,18 +56,31 @@
           zlib
         ];
 
-        nativeBuildInputs = with pkgs;
-          [
-            rustToolchain
-            pkg-config
-          ]
-          ++ lib.optionals stdenv.isDarwin [
-            darwin.apple_sdk.frameworks.Security
-          ];
+        nativeBuildInputs = with pkgs; [
+          rustToolchain
+          pkg-config
+        ];
+
+        pre-commit-check = git-hooks.lib.${system}.run {
+          src = ./.;
+          package = pkgs.prek;
+          hooks = {
+            typos = {
+              enable = true;
+              entry = "${pkgs.typos}/bin/typos";
+            };
+          };
+        };
       in
         with pkgs; {
+          checks = {
+            inherit pre-commit-check;
+          };
+
           devShells.default = mkShell {
-            inherit buildInputs nativeBuildInputs;
+            inherit nativeBuildInputs;
+            inherit (pre-commit-check) shellHook;
+            buildInputs = buildInputs ++ pre-commit-check.enabledPackages;
           };
 
           packages.default = pkgs.callPackage ./default.nix {

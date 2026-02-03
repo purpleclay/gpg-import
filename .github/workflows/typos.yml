@@ -1,0 +1,40 @@
+name: typos
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  typos:
+    runs-on: ubuntu-24.04
+    if: github.actor != 'renovate[bot]'
+    name: check spelling
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
+        with:
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
+
+      - name: Run Typos
+        run: nix develop -c typos
