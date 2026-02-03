@@ -46,6 +46,7 @@
 
         buildInputs = with pkgs; [
           alejandra
+          cargo-nextest
           libfaketime
           nil
           nodePackages.prettier
