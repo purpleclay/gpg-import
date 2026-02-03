@@ -18,7 +18,7 @@ jobs:
     name: shellcheck
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
@@ -41,7 +41,7 @@ jobs:
     name: shfmt
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
