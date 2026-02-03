@@ -4,126 +4,63 @@ on:
     tags:
       - "*.*.*"
 jobs:
-  nix-patch:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Git Clone
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.repository.default_branch }}
-
-      - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
-          trust_level: 5
-          git_user_signingkey: true
-          git_commit_gpgsign: true
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Strip Tag Prefix
-        id: strip_tag
-        run: |
-          TAG=${GITHUB_REF##*/}
-          STRIPPED_TAG=${TAG#v}
-          echo "tag=${STRIPPED_TAG}" >> $GITHUB_OUTPUT
-
-      - name: Patch Version
-        run: |
-          sed -i 's/version = "[^"]*";/version = "${{ steps.strip_tag.outputs.tag }}";/' default.nix
-
-      - name: Patch Hash
-        run: |
-          sed -i 's/hash =/# hash =/' default.nix
-          set +e
-          nix build .#default 2>&1 | tee error.log
-          set -e
-          HASH=$(grep -oP '(got|specified):\s+(sha256-\S+)' error.log | awk '{print $2}' | tail -1)
-          if [ -z "$HASH" ]; then
-            echo "Failed to extract hash from error log"
-            cat error.log
-            exit 1
-          fi
-          sed -i "s|# hash = \"[^\"]*\";|hash = \"$HASH\";|" default.nix
-
-      - name: Patch CargoHash
-        run: |
-          set +e
-          nix build .#default 2>&1 | tee error.log
-          set -e
-          HASH=$(grep -oP '(got|specified):\s+(sha256-\S+)' error.log | awk '{print $2}' | tail -1)
-          if [ -z "$HASH" ]; then
-            echo "Failed to extract cargoHash from error log"
-            cat error.log
-            exit 1
-          fi
-          sed -i "s|cargoHash = \"[^\"]*\";|cargoHash = \"$HASH\";|" default.nix
-
-      - name: Verify Build
-        run: |
-          nix build .#default
-          ./result/bin/gpg-import version
-
-      - name: Commit Changes
-        run: |
-          git add default.nix
-          git commit -S -m "chore(nix): bump version of gpg-import to ${{ steps.strip_tag.outputs.tag }} [skip ci]"
-          git push
-
   build:
     runs-on: ${{ matrix.platform.runs-on }}
     name: build / ${{ matrix.platform.name }}
-    needs: nix-patch
     strategy:
       matrix:
         platform:
           - name: linux_x86_64_musl
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
             target: x86_64-unknown-linux-musl
-            use-cross: true
+            use-zigbuild: true
           - name: linux_aarch64_musl
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
             target: aarch64-unknown-linux-musl
-            use-cross: true
+            use-zigbuild: true
           - name: darwin_x86_64
             runs-on: macos-15
             target: x86_64-apple-darwin
-            use-cross: false
+            use-zigbuild: false
           - name: darwin_aarch64
             runs-on: macos-15
             target: aarch64-apple-darwin
-            use-cross: false
+            use-zigbuild: false
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform.target }}
 
-      - name: Cache
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
-
-      - name: Build
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1
+      - name: Setup Zig
+        if: ${{ matrix.platform.use-zigbuild }}
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
-          use-cross: ${{ matrix.platform.use-cross }}
-          command: build
-          args: --locked --release --target ${{ matrix.platform.target }}
+          version: 0.13.0
+
+      - name: Install cargo-zigbuild
+        if: ${{ matrix.platform.use-zigbuild }}
+        run: cargo install cargo-zigbuild
+
+      - name: Cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      - name: Build with zigbuild
+        if: ${{ matrix.platform.use-zigbuild }}
+        run: cargo zigbuild --locked --release --target ${{ matrix.platform.target }}
+
+      - name: Build with cargo
+        if: ${{ !matrix.platform.use-zigbuild }}
+        run: cargo build --locked --release --target ${{ matrix.platform.target }}
 
       - name: Archive
         id: archive
         shell: bash
         run: |
+          APP_NAME=$(grep '^name = ' Cargo.toml | head -n1 | cut -d'"' -f2)
           EXE_SUFFIX=""
           case ${{ matrix.platform.target }} in
             *-pc-windows-*)
@@ -136,10 +73,10 @@ jobs:
               PKG_SUFFIX=".zip"
               ;;
           esac;
-          PKG_NAME=gpg-import-${{ github.ref_name }}-${{ matrix.platform.target }}$PKG_SUFFIX
-          PKG_DIR=archive/gpg-import
+          PKG_NAME=$APP_NAME-${{ github.ref_name }}-${{ matrix.platform.target }}$PKG_SUFFIX
+          PKG_DIR=archive/$APP_NAME
           mkdir -p $PKG_DIR
-          cp target/${{ matrix.platform.target }}/release/gpg-import$EXE_SUFFIX $PKG_DIR/
+          cp target/${{ matrix.platform.target }}/release/$APP_NAME$EXE_SUFFIX $PKG_DIR/
           cp README.md LICENSE $PKG_DIR/
 
           pushd $PKG_DIR >/dev/null
@@ -165,31 +102,39 @@ jobs:
           retention-days: 1
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: release
     permissions:
       contents: write
     needs: build
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Release Note
+        id: release_notes
+        run: |
+          echo "note<<EOF" >> $GITHUB_OUTPUT
+          nix run . >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Download Archives
         id: download
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          path: /tmp/archives
-
-      - name: Move Archives
-        shell: bash
-        run: |
-          mkdir -p ~/archives
-          find ${{ steps.download.outputs.download-path }} -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} ~/archives/ \;
+          path: archives
+          merge-multiple: true
 
       - name: Create Release
-        uses: ncipollo/release-action@bcfe5470707e8832e12347755757cec0eb3c22af # v1.18.0
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
-          artifacts: "~/archives/*"
-          makeLatest: true
-          name: ${{ github.ref_name }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          files: ${{ steps.download.outputs.download-path }}/*
+          body: ${{ steps.release_notes.outputs.note }}
+          make_latest: true

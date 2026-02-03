@@ -35,4 +35,4 @@ jobs:
         env:
           # renovate: datasource=github-tags depName=purpleclay/nsv
           NSV_VERSION: "v0.12.1"
-        run: nix run github:purpleclay/nsv/${NSV_VERSION} -- tag --hook "./scripts/patch-nix-hashes.sh" --show
+        run: nix run github:purpleclay/nsv/${NSV_VERSION} -- tag --show
