@@ -54,3 +54,38 @@ pub fn configure_signing(repo: &Repository, cfg: &SigningConfig) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn configure_signing_sets_git_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+
+        let cfg = SigningConfig {
+            user_name: "batman".to_string(),
+            user_email: "batman@dc.com".to_string(),
+            key_id: "FDEFE8AB8796E127".to_string(),
+            commit_sign: true,
+            tag_sign: true,
+            push_sign: true,
+        };
+
+        let result = configure_signing(&repo, &cfg);
+        assert!(result.is_ok(), "Should configure signing");
+
+        let config = repo.config().unwrap();
+        assert_eq!(config.get_string("user.name").unwrap(), "batman");
+        assert_eq!(config.get_string("user.email").unwrap(), "batman@dc.com");
+        assert_eq!(
+            config.get_string("user.signingKey").unwrap(),
+            "FDEFE8AB8796E127"
+        );
+        assert!(config.get_bool("commit.gpgsign").unwrap());
+        assert!(config.get_bool("tag.gpgsign").unwrap());
+        assert_eq!(config.get_string("push.gpgsign").unwrap(), "if-asked");
+    }
+}
