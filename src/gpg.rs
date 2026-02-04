@@ -314,16 +314,20 @@ pub fn import_secret_key(key: &str) -> Result<String> {
         .stderr(Stdio::piped())
         .spawn()?;
 
-    gpg_import_info.stdin.unwrap().write_all(&decoded)?;
+    gpg_import_info
+        .stdin
+        .ok_or_else(|| anyhow::anyhow!("failed to open stdin for gpg process"))?
+        .write_all(&decoded)?;
+
     let mut s = String::default();
     gpg_import_info
         .stderr
-        .unwrap()
-        .read_to_string(&mut s)
-        .unwrap();
+        .ok_or_else(|| anyhow::anyhow!("failed to open stderr for gpg process"))?
+        .read_to_string(&mut s)?;
 
-    let key = parse_gpg_import(&s).unwrap();
-    Ok(key.1)
+    let (_, key) = parse_gpg_import(&s)
+        .map_err(|e| anyhow::anyhow!("failed to parse gpg import output: {}", e))?;
+    Ok(key)
 }
 
 /// Extracts internal details for a given GPG private key and verifies its validity
@@ -372,14 +376,18 @@ pub fn preset_passphrase(keygrip: &str, passphrase: &str) -> Result<()> {
         .stdout(Stdio::null())
         .spawn()?;
 
-    set_passphrase.stdin.as_ref().unwrap().write_all(
-        format!(
-            "PRESET_PASSPHRASE {} -1 {}",
-            keygrip,
-            &hex::encode(passphrase).to_uppercase()
-        )
-        .as_bytes(),
-    )?;
+    set_passphrase
+        .stdin
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("failed to open stdin for gpg-connect-agent"))?
+        .write_all(
+            format!(
+                "PRESET_PASSPHRASE {} -1 {}",
+                keygrip,
+                &hex::encode(passphrase).to_uppercase()
+            )
+            .as_bytes(),
+        )?;
     set_passphrase.wait_with_output()?;
     Ok(())
 }
@@ -404,7 +412,7 @@ pub fn assign_trust_level(key_id: &str, trust_level: u8) -> Result<()> {
     set_trust
         .stdin
         .as_ref()
-        .unwrap()
+        .ok_or_else(|| anyhow::anyhow!("failed to open stdin for gpg process"))?
         .write_all(format!("{trust_level}\ny\n").as_bytes())?;
     set_trust.wait_with_output()?;
     Ok(())
