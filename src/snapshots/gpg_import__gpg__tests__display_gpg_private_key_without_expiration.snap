@@ -1,0 +1,12 @@
+---
+source: src/gpg.rs
+expression: key.to_string()
+---
+user:           batman <batman@dc.com>
+fingerprint:    BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
+keygrip:        C4403DA4AF911084480BA46743E707CCDD082A24
+key_id:         FDEFE8AB8796E127
+created_on:     Tue, 14 Nov 2023 22:13:20 +0000
+sub_keygrip:    4AC8E7E7FD8B405DF2761726D296F98C9B778875
+sub_key_id:     BE6663F6A323FBE8
+sub_created_on: Tue, 14 Nov 2023 22:13:20 +0000

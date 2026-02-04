@@ -1,0 +1,8 @@
+---
+source: src/gpg.rs
+expression: content
+---
+default-cache-ttl 21600
+max-cache-ttl 31536000
+allow-preset-passphrase
+allow-loopback-pinentry
