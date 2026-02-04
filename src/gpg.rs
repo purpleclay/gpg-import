@@ -423,6 +423,69 @@ mod tests {
     use super::*;
 
     use chrono::Duration;
+    use tempfile::TempDir;
+
+    #[test]
+    fn parse_gpg_version_output() {
+        let gpg_output = "gpg (GnuPG) 2.4.5
+libgcrypt 1.10.3
+Copyright (C) 2024 g10 Code GmbH
+License GNU GPL-3.0-or-later <https://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Home: /home/user/.gnupg
+Supported algorithms:
+Pubkey: RSA, ELG, DSA, ECDH, ECDSA, EDDSA";
+
+        let result = gpg_output.parse::<GpgInfo>();
+        assert!(result.is_ok(), "Should parse GPG version output");
+
+        let info = result.unwrap();
+        assert_eq!(info.version, "2.4.5");
+        assert_eq!(info.libgcrypt, "1.10.3");
+        assert_eq!(info.home_dir, "/home/user/.gnupg");
+    }
+
+    #[test]
+    fn configure_defaults_creates_gpg_conf() {
+        let temp_dir = TempDir::new().unwrap();
+        let home_dir = temp_dir.path().to_str().unwrap();
+
+        let result = configure_defaults(home_dir);
+        assert!(result.is_ok(), "Should create gpg.conf");
+
+        let gpg_conf = temp_dir.path().join("gpg.conf");
+        assert!(gpg_conf.exists(), "gpg.conf should exist");
+
+        let content = fs::read_to_string(gpg_conf).unwrap();
+        assert_eq!(
+            content,
+            "use-agent
+pinentry-mode loopback"
+        );
+    }
+
+    #[test]
+    fn configure_agent_defaults_creates_gpg_agent_conf() {
+        let temp_dir = TempDir::new().unwrap();
+        let home_dir = temp_dir.path().to_str().unwrap();
+
+        let result = configure_agent_defaults(home_dir);
+        assert!(result.is_ok(), "Should create gpg-agent.conf");
+
+        let agent_conf = temp_dir.path().join("gpg-agent.conf");
+        assert!(agent_conf.exists(), "gpg-agent.conf should exist");
+
+        let content = fs::read_to_string(agent_conf).unwrap();
+        assert_eq!(
+            content,
+            "default-cache-ttl 21600
+max-cache-ttl 31536000
+allow-preset-passphrase
+allow-loopback-pinentry"
+        );
+    }
 
     fn generate_gpg_colon_format(
         secret_key_creation: i64,
