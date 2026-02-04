@@ -1,0 +1,6 @@
+---
+source: src/gpg.rs
+expression: content
+---
+use-agent
+pinentry-mode loopback

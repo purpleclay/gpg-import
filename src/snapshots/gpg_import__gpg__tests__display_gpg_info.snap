@@ -1,0 +1,6 @@
+---
+source: src/gpg.rs
+expression: info.to_string()
+---
+version: 2.4.5 (libgcrypt: 1.10.3)
+homedir: /home/user/.gnupg

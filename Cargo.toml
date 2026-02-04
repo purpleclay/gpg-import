@@ -23,6 +23,7 @@ nom = "8.0.0"
 thiserror = "2.0.0"
 
 [dev-dependencies]
+insta = "1.42"
 tempfile = "3.8"
 serial_test = "3.0"
 

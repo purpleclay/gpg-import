@@ -88,4 +88,30 @@ mod tests {
         assert!(config.get_bool("tag.gpgsign").unwrap());
         assert_eq!(config.get_string("push.gpgsign").unwrap(), "if-asked");
     }
+
+    #[test]
+    fn display_signing_config() {
+        let cfg = SigningConfig {
+            user_name: "batman".to_string(),
+            user_email: "batman@dc.com".to_string(),
+            key_id: "FDEFE8AB8796E127".to_string(),
+            commit_sign: true,
+            tag_sign: true,
+            push_sign: true,
+        };
+        insta::assert_snapshot!(cfg.to_string());
+    }
+
+    #[test]
+    fn display_signing_config_without_push_sign() {
+        let cfg = SigningConfig {
+            user_name: "batman".to_string(),
+            user_email: "batman@dc.com".to_string(),
+            key_id: "FDEFE8AB8796E127".to_string(),
+            commit_sign: true,
+            tag_sign: true,
+            push_sign: false,
+        };
+        insta::assert_snapshot!(cfg.to_string());
+    }
 }

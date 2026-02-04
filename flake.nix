@@ -46,6 +46,7 @@
 
         buildInputs = with pkgs; [
           alejandra
+          cargo-insta
           cargo-nextest
           libfaketime
           nil

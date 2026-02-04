@@ -25,6 +25,7 @@
 !Cargo.toml
 !Cargo.lock
 !src/*.rs
+!src/snapshots/*
 !tests/*.rs
 !tests/testdata/*.key
 !build.rs

@@ -459,11 +459,7 @@ Pubkey: RSA, ELG, DSA, ECDH, ECDSA, EDDSA";
         assert!(gpg_conf.exists(), "gpg.conf should exist");
 
         let content = fs::read_to_string(gpg_conf).unwrap();
-        assert_eq!(
-            content,
-            "use-agent
-pinentry-mode loopback"
-        );
+        insta::assert_snapshot!(content);
     }
 
     #[test]
@@ -478,13 +474,40 @@ pinentry-mode loopback"
         assert!(agent_conf.exists(), "gpg-agent.conf should exist");
 
         let content = fs::read_to_string(agent_conf).unwrap();
-        assert_eq!(
-            content,
-            "default-cache-ttl 21600
-max-cache-ttl 31536000
-allow-preset-passphrase
-allow-loopback-pinentry"
-        );
+        insta::assert_snapshot!(content);
+    }
+
+    #[test]
+    fn display_gpg_info() {
+        let info = GpgInfo {
+            version: "2.4.5".to_string(),
+            libgcrypt: "1.10.3".to_string(),
+            home_dir: "/home/user/.gnupg".to_string(),
+        };
+        insta::assert_snapshot!(info.to_string());
+    }
+
+    #[test]
+    fn display_gpg_private_key_without_expiration() {
+        let key = GpgPrivateKey {
+            user_name: "batman".to_string(),
+            user_email: "batman@dc.com".to_string(),
+            secret_key: GpgKeyDetails {
+                creation_date: 1700000000,
+                expiration_date: None,
+                fingerprint: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
+                key_id: "FDEFE8AB8796E127".to_string(),
+                keygrip: "C4403DA4AF911084480BA46743E707CCDD082A24".to_string(),
+            },
+            secret_subkey: GpgKeyDetails {
+                creation_date: 1700000000,
+                expiration_date: None,
+                fingerprint: "F36BE03211AF1D3CE26D8B3ABE6663F6A323FBE8".to_string(),
+                key_id: "BE6663F6A323FBE8".to_string(),
+                keygrip: "4AC8E7E7FD8B405DF2761726D296F98C9B778875".to_string(),
+            },
+        };
+        insta::assert_snapshot!(key.to_string());
     }
 
     fn generate_gpg_colon_format(
