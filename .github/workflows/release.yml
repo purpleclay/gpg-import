@@ -122,7 +122,7 @@ jobs:
         id: release_notes
         run: |
           echo "note<<EOF" >> $GITHUB_OUTPUT
-          nix run . >> $GITHUB_OUTPUT
+          nix run github:purpleclay/release-note >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Download Archives
