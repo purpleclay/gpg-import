@@ -312,6 +312,51 @@ pub enum GpgError {
     KeyNotFound(String),
 }
 
+/// Previews a GPG private key without importing it.
+/// Returns key details by parsing the key data without adding it to the keyring.
+pub fn preview_key(key: &str) -> Result<GpgPrivateKey> {
+    if key.is_empty() {
+        bail!(GpgError::EmptyKeyInput);
+    }
+
+    let decoded = match general_purpose::STANDARD.decode(key) {
+        Ok(decoded_key) => Ok(decoded_key),
+        Err(e) => match e {
+            DecodeError::InvalidByte(offset, byte) => {
+                bail!(GpgError::InvalidByteInGpgKey(offset, byte.as_char()))
+            }
+            _ => Err(e),
+        },
+    }?;
+
+    let temp_dir = tempfile::tempdir()?;
+    let key_path = temp_dir.path().join("key.asc");
+    fs::write(&key_path, &decoded)?;
+
+    let gpg_preview = Command::new("gpg")
+        .args([
+            "--import-options",
+            "show-only",
+            "--with-colons",
+            "--with-keygrip",
+            "--import",
+        ])
+        .arg(&key_path)
+        .output()?;
+
+    if !gpg_preview.status.success() {
+        let stderr = String::from_utf8_lossy(&gpg_preview.stderr);
+        bail!(GpgError::InvalidGpgKeyData(stderr.trim().to_string()));
+    }
+
+    let output = String::from_utf8(gpg_preview.stdout)?;
+    let key_details = output
+        .parse::<GpgPrivateKey>()
+        .map_err(|_| GpgError::InvalidGpgKeyData(output.trim().to_string()))?;
+
+    Ok(key_details)
+}
+
 /// Attempts to import a GPG private key
 pub fn import_secret_key(key: &str) -> Result<String> {
     if key.is_empty() {

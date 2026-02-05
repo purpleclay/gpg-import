@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{command, Parser, Subcommand, ValueEnum};
-use gpg_import::{git, gpg};
+use gpg_import::import::GpgImport;
 use std::println;
 
 pub mod built_info {
@@ -8,7 +8,7 @@ pub mod built_info {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, about, long_about = None, disable_version_flag = true)]
+#[command(author, about, long_about = None, disable_version_flag = true, disable_help_subcommand = true)]
 struct Args {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -31,8 +31,12 @@ struct Args {
     trust_level: Option<TrustLevel>,
 
     /// Skip all GPG configuration for the detected git repository
-    #[arg(short, long, env = "GPG_SKIP_GIT", default_value_t = false)]
+    #[arg(short, long, env = "GPG_SKIP_GIT")]
     skip_git: bool,
+
+    /// Simulate the import without making changes
+    #[arg(long, env = "GPG_DRY_RUN")]
+    dry_run: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -89,61 +93,13 @@ fn main() -> Result<()> {
     }
 
     let key = args.key.ok_or_else(|| anyhow::anyhow!("Key is required for GPG import. Use --key or set GPG_PRIVATE_KEY environment variable."))?;
-    let info = gpg::detect_version()?;
-    println!("> Detected GnuPG:");
-    println!("{info}");
 
-    let key_id = gpg::import_secret_key(key.trim())?;
-    let private_key = gpg::extract_key_info(&key_id)?;
-    println!("> Imported GPG key:");
-    println!("{private_key}");
-
-    gpg::configure_defaults(&info.home_dir)?;
-    gpg::configure_agent_defaults(&info.home_dir)?;
-
-    if let Some(passphrase) = args.passphrase {
-        let passphrase_cleaned = passphrase.trim();
-        gpg::preset_passphrase(&private_key.secret_key.keygrip, passphrase_cleaned)?;
-        gpg::preset_passphrase(&private_key.secret_subkey.keygrip, passphrase_cleaned)?;
-
-        println!("> Setting Passphrase:");
-        println!(
-            "keygrip: {} [{}]",
-            private_key.secret_key.keygrip, private_key.secret_key.key_id
-        );
-        println!(
-            "keygrip: {} [{}]",
-            private_key.secret_subkey.keygrip, private_key.secret_subkey.key_id
-        );
-    }
-
-    if let Some(trust_level) = args.trust_level {
-        gpg::assign_trust_level(&private_key.secret_key.key_id, trust_level.trust_db_value())?;
-        println!("\n> Setting Trust Level:");
-        println!(
-            "trust_level: {} [{}]",
-            trust_level.trust_db_value(),
-            private_key.secret_key.key_id
-        );
-    }
-
-    if !args.skip_git {
-        if let Some(repo) = git::is_repo() {
-            println!("\n> Git config set:");
-
-            let git_cfg = git::SigningConfig {
-                user_name: private_key.user_name,
-                user_email: private_key.user_email,
-                key_id: private_key.secret_key.key_id,
-                commit_sign: true,
-                tag_sign: true,
-                push_sign: true,
-            };
-            git::configure_signing(&repo, &git_cfg)?;
-            println!("{git_cfg}");
-        }
-    }
-    Ok(())
+    GpgImport::new(key)
+        .with_passphrase(args.passphrase)
+        .with_trust_level(args.trust_level.map(|t| t.trust_db_value()))
+        .skip_git(args.skip_git)
+        .dry_run(args.dry_run)
+        .import()
 }
 
 fn print_version_short() {
