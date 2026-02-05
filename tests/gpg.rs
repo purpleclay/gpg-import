@@ -328,6 +328,22 @@ fn assign_trust_level() {
 }
 
 #[test]
+fn preview_key_returns_key_details() {
+    let gpg_key = include_str!("testdata/no-passphrase.key");
+    let result = gpg::preview_key(gpg_key);
+    assert!(result.is_ok(), "Should preview GPG key");
+
+    let key = result.unwrap();
+    assert_eq!(key.user_name, "batman");
+    assert_eq!(key.user_email, "batman@dc.com");
+    assert!(!key.secret_key.fingerprint.is_empty());
+    assert!(!key.secret_key.key_id.is_empty());
+    assert!(!key.secret_key.keygrip.is_empty());
+    assert!(!key.secret_subkey.key_id.is_empty());
+    assert!(!key.secret_subkey.keygrip.is_empty());
+}
+
+#[test]
 fn import_secret_key_invalid_base64() {
     let invalid_base64 = "not-valid-base64!!!";
     let result = gpg::import_secret_key(invalid_base64);
