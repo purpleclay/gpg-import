@@ -306,3 +306,89 @@ fn extract_key_info_expired_secret_subkey() {
         "Expected error message does not match"
     );
 }
+
+#[test]
+#[serial]
+fn assign_trust_level() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let _fixture = fixture.unwrap();
+
+    let gpg_key = include_str!("testdata/no-passphrase.key");
+    let result = gpg::import_secret_key(gpg_key);
+    assert!(result.is_ok(), "Failed to import GPG key");
+
+    let key_id = result.unwrap();
+    let key_info = gpg::extract_key_info(&key_id);
+    assert!(key_info.is_ok(), "Failed to extract key info");
+
+    let key_info = key_info.unwrap();
+    let result = gpg::assign_trust_level(&key_info.secret_key.key_id, 5);
+    assert!(result.is_ok(), "Failed to assign trust level");
+}
+
+#[test]
+fn import_secret_key_invalid_base64() {
+    let invalid_base64 = "not-valid-base64!!!";
+    let result = gpg::import_secret_key(invalid_base64);
+
+    let err = result.unwrap_err();
+    let gpg_err = err.downcast_ref::<gpg::GpgError>().unwrap();
+    assert!(
+        matches!(gpg_err, gpg::GpgError::InvalidByteInGpgKey(_, _)),
+        "Expected InvalidByteInGpgKey error, got: {}",
+        gpg_err
+    );
+}
+
+#[test]
+fn import_secret_key_empty_input() {
+    let result = gpg::import_secret_key("");
+
+    let err = result.unwrap_err();
+    let gpg_err = err.downcast_ref::<gpg::GpgError>().unwrap();
+    assert!(
+        matches!(gpg_err, gpg::GpgError::EmptyKeyInput),
+        "Expected EmptyKeyInput error, got: {}",
+        gpg_err
+    );
+}
+
+#[test]
+#[serial]
+fn import_secret_key_valid_base64_invalid_gpg_data() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let _fixture = fixture.unwrap();
+
+    use base64::{engine::general_purpose, Engine as _};
+    let invalid_gpg_data = general_purpose::STANDARD.encode("not a gpg key");
+
+    let result = gpg::import_secret_key(&invalid_gpg_data);
+
+    let err = result.unwrap_err();
+    let gpg_err = err.downcast_ref::<gpg::GpgError>().unwrap();
+    assert!(
+        matches!(gpg_err, gpg::GpgError::InvalidGpgKeyData(_)),
+        "Expected InvalidGpgKeyData error, got: {}",
+        gpg_err
+    );
+}
+
+#[test]
+#[serial]
+fn extract_key_info_nonexistent_key() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let _fixture = fixture.unwrap();
+
+    let result = gpg::extract_key_info("NONEXISTENT1234567890");
+
+    let err = result.unwrap_err();
+    let gpg_err = err.downcast_ref::<gpg::GpgError>().unwrap();
+    assert!(
+        matches!(gpg_err, gpg::GpgError::KeyNotFound(_)),
+        "Expected KeyNotFound error, got: {}",
+        gpg_err
+    );
+}

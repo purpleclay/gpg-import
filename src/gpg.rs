@@ -292,17 +292,37 @@ fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
     ))
 }
 
+/// Errors that can occur when working with GPG keys
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("detected invalid byte at position {0} within gpg key '{1}'")]
-struct InvalidByteInGpgKey(usize, char);
+pub enum GpgError {
+    /// The provided key input was empty
+    #[error("gpg key input is empty")]
+    EmptyKeyInput,
+
+    /// An invalid byte was detected during base64 decoding
+    #[error("detected invalid byte at position {0} within gpg key '{1}'")]
+    InvalidByteInGpgKey(usize, char),
+
+    /// The decoded data is not a valid GPG key
+    #[error("decoded data is not a valid gpg key: {0}")]
+    InvalidGpgKeyData(String),
+
+    /// The specified key was not found in the keyring
+    #[error("gpg key not found: {0}")]
+    KeyNotFound(String),
+}
 
 /// Attempts to import a GPG private key
 pub fn import_secret_key(key: &str) -> Result<String> {
+    if key.is_empty() {
+        bail!(GpgError::EmptyKeyInput);
+    }
+
     let decoded = match general_purpose::STANDARD.decode(key) {
         Ok(decoded_key) => Ok(decoded_key),
         Err(e) => match e {
             DecodeError::InvalidByte(offset, byte) => {
-                bail!(InvalidByteInGpgKey(offset, byte.as_char()))
+                bail!(GpgError::InvalidByteInGpgKey(offset, byte.as_char()))
             }
             _ => Err(e),
         },
@@ -325,8 +345,8 @@ pub fn import_secret_key(key: &str) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("failed to open stderr for gpg process"))?
         .read_to_string(&mut s)?;
 
-    let (_, key) = parse_gpg_import(&s)
-        .map_err(|e| anyhow::anyhow!("failed to parse gpg import output: {}", e))?;
+    let (_, key) =
+        parse_gpg_import(&s).map_err(|_| GpgError::InvalidGpgKeyData(s.trim().to_string()))?;
     Ok(key)
 }
 
@@ -342,6 +362,10 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
             key_id,
         ])
         .output()?;
+
+    if !gpg_key_details.status.success() {
+        bail!(GpgError::KeyNotFound(key_id.to_string()));
+    }
 
     let output = String::from_utf8(gpg_key_details.stdout)?;
     let key_details = output.parse::<GpgPrivateKey>()?;
