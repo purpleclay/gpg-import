@@ -310,6 +310,10 @@ pub enum GpgError {
     /// The specified key was not found in the keyring
     #[error("gpg key not found: {0}")]
     KeyNotFound(String),
+
+    /// The specified fingerprint was not found in the key
+    #[error("fingerprint not found in key: {0}")]
+    FingerprintNotFound(String),
 }
 
 /// Detects the key format and returns the raw key bytes.

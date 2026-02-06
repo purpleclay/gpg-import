@@ -1,10 +1,11 @@
 use crate::{git, gpg};
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 /// A builder for importing GPG keys with optional configuration.
 pub struct GpgImport {
     key: String,
     passphrase: Option<String>,
+    fingerprint: Option<String>,
     trust_level: Option<u8>,
     skip_git: bool,
     dry_run: bool,
@@ -16,6 +17,7 @@ impl GpgImport {
         Self {
             key,
             passphrase: None,
+            fingerprint: None,
             trust_level: None,
             skip_git: false,
             dry_run: false,
@@ -25,6 +27,12 @@ impl GpgImport {
     /// Set the passphrase for the key.
     pub fn with_passphrase(mut self, passphrase: Option<String>) -> Self {
         self.passphrase = passphrase;
+        self
+    }
+
+    /// Set the fingerprint of a specific key or subkey to use for signing.
+    pub fn with_fingerprint(mut self, fingerprint: Option<String>) -> Self {
+        self.fingerprint = fingerprint;
         self
     }
 
@@ -104,10 +112,21 @@ impl GpgImport {
 
         if !self.skip_git {
             if let Some(repo) = git::is_repo() {
+                let signing_key = if let Some(ref fp) = self.fingerprint {
+                    if fp != &private_key.secret_key.fingerprint
+                        && fp != &private_key.secret_subkey.fingerprint
+                    {
+                        bail!(gpg::GpgError::FingerprintNotFound(fp.clone()));
+                    }
+                    fp.clone()
+                } else {
+                    private_key.secret_key.key_id.clone()
+                };
+
                 let git_cfg = git::SigningConfig {
                     user_name: private_key.user_name,
                     user_email: private_key.user_email,
-                    key_id: private_key.secret_key.key_id,
+                    key_id: signing_key,
                     commit_sign: true,
                     tag_sign: true,
                     push_sign: true,
