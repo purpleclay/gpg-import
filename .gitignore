@@ -27,7 +27,7 @@
 !src/*.rs
 !src/snapshots/*
 !tests/*.rs
-!tests/testdata/*.key
+!tests/testdata/*
 !build.rs
 target/**/*
 

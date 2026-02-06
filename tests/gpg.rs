@@ -201,12 +201,12 @@ impl Drop for GpgTestFixture {
 
 #[test]
 #[serial]
-fn import_secret_key() {
+fn import_secret_key_base64() {
     let fixture = GpgTestFixture::new();
     assert!(fixture.is_ok(), "Failed to create GPG test fixture");
     let fixture = fixture.unwrap();
 
-    let gpg_key = include_str!("testdata/no-passphrase.key");
+    let gpg_key = include_str!("testdata/no-passphrase.base64.key");
     let result = gpg::import_secret_key(gpg_key);
     assert!(result.is_ok(), "Failed to import GPG key");
 
@@ -217,12 +217,12 @@ fn import_secret_key() {
 
 #[test]
 #[serial]
-fn import_secret_key_with_passphrase() {
+fn import_secret_key_base64_with_passphrase() {
     let fixture = GpgTestFixture::new();
     assert!(fixture.is_ok(), "Failed to create GPG test fixture");
     let fixture = fixture.unwrap();
 
-    let gpg_key = include_str!("testdata/passphrase.key");
+    let gpg_key = include_str!("testdata/passphrase.base64.key");
     let result = gpg::import_secret_key(gpg_key);
     assert!(result.is_ok(), "Failed to import GPG key");
 
@@ -314,7 +314,7 @@ fn assign_trust_level() {
     assert!(fixture.is_ok(), "Failed to create GPG test fixture");
     let _fixture = fixture.unwrap();
 
-    let gpg_key = include_str!("testdata/no-passphrase.key");
+    let gpg_key = include_str!("testdata/no-passphrase.base64.key");
     let result = gpg::import_secret_key(gpg_key);
     assert!(result.is_ok(), "Failed to import GPG key");
 
@@ -328,8 +328,8 @@ fn assign_trust_level() {
 }
 
 #[test]
-fn preview_key_returns_key_details() {
-    let gpg_key = include_str!("testdata/no-passphrase.key");
+fn preview_key_base64() {
+    let gpg_key = include_str!("testdata/no-passphrase.base64.key");
     let result = gpg::preview_key(gpg_key);
     assert!(result.is_ok(), "Should preview GPG key");
 
@@ -407,4 +407,36 @@ fn extract_key_info_nonexistent_key() {
         "Expected KeyNotFound error, got: {}",
         gpg_err
     );
+}
+
+#[test]
+#[serial]
+fn import_secret_key_ascii_armored() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let fixture = fixture.unwrap();
+
+    let gpg_key = include_str!("testdata/no-passphrase.asc");
+    let result = gpg::import_secret_key(gpg_key);
+    assert!(result.is_ok(), "Failed to import ASCII armored GPG key");
+
+    let fingerprint = result.unwrap();
+    let sign_result = fixture.create_and_sign_file(&fingerprint);
+    assert!(sign_result.is_ok(), "Failed to create and sign test file");
+}
+
+#[test]
+fn preview_key_ascii_armored() {
+    let gpg_key = include_str!("testdata/no-passphrase.asc");
+    let result = gpg::preview_key(gpg_key);
+    assert!(result.is_ok(), "Should preview ASCII armored GPG key");
+
+    let key = result.unwrap();
+    assert_eq!(key.user_name, "batman");
+    assert_eq!(key.user_email, "batman@dc.com");
+    assert!(!key.secret_key.fingerprint.is_empty());
+    assert!(!key.secret_key.key_id.is_empty());
+    assert!(!key.secret_key.keygrip.is_empty());
+    assert!(!key.secret_subkey.key_id.is_empty());
+    assert!(!key.secret_subkey.keygrip.is_empty());
 }

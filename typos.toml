@@ -10,3 +10,9 @@ extend-ignore-identifiers-re = [
     # Git commit hashes
     "^[0-9a-f]{7,40}$",
 ]
+
+[files]
+extend-exclude = [
+    # ASCII armored GPG keys contain base64 data that triggers false positives
+    "tests/testdata/*.asc",
+]
