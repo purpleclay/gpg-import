@@ -21,6 +21,10 @@ struct Args {
     #[arg(short, long, env = "GPG_PASSPHRASE")]
     passphrase: Option<String>,
 
+    /// The fingerprint of a specific key or subkey to use for signing
+    #[arg(short, long, env = "GPG_FINGERPRINT", value_name = "FINGERPRINT")]
+    fingerprint: Option<String>,
+
     /// A level of trust to associate with the GPG private key
     #[arg(short, long, env = "GPG_TRUST_LEVEL", value_enum)]
     trust_level: Option<TrustLevel>,
@@ -91,6 +95,7 @@ fn main() -> Result<()> {
 
     GpgImport::new(key)
         .with_passphrase(args.passphrase)
+        .with_fingerprint(args.fingerprint)
         .with_trust_level(args.trust_level.map(|t| t.trust_db_value()))
         .skip_git(args.skip_git)
         .dry_run(args.dry_run)

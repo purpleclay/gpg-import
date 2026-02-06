@@ -440,3 +440,9 @@ fn preview_key_ascii_armored() {
     assert!(!key.secret_subkey.key_id.is_empty());
     assert!(!key.secret_subkey.keygrip.is_empty());
 }
+
+#[test]
+fn fingerprint_not_found_error_format() {
+    let err = gpg::GpgError::FingerprintNotFound("ABC123".to_string());
+    assert_eq!(format!("{}", err), "fingerprint not found in key: ABC123");
+}
