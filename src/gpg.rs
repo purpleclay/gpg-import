@@ -312,22 +312,32 @@ pub enum GpgError {
     KeyNotFound(String),
 }
 
-/// Previews a GPG private key without importing it.
-/// Returns key details by parsing the key data without adding it to the keyring.
-pub fn preview_key(key: &str) -> Result<GpgPrivateKey> {
+/// Detects the key format and returns the raw key bytes.
+/// Supports ASCII armored keys in both plain text and base64 encoded formats.
+fn decode_key_input(key: &str) -> Result<Vec<u8>> {
     if key.is_empty() {
         bail!(GpgError::EmptyKeyInput);
     }
 
-    let decoded = match general_purpose::STANDARD.decode(key) {
+    if key.trim_start().starts_with("-----BEGIN PGP") {
+        return Ok(key.as_bytes().to_vec());
+    }
+
+    match general_purpose::STANDARD.decode(key) {
         Ok(decoded_key) => Ok(decoded_key),
         Err(e) => match e {
             DecodeError::InvalidByte(offset, byte) => {
                 bail!(GpgError::InvalidByteInGpgKey(offset, byte.as_char()))
             }
-            _ => Err(e),
+            _ => Err(e.into()),
         },
-    }?;
+    }
+}
+
+/// Previews a GPG private key without importing it.
+/// Returns key details by parsing the key data without adding it to the keyring.
+pub fn preview_key(key: &str) -> Result<GpgPrivateKey> {
+    let decoded = decode_key_input(key)?;
 
     let temp_dir = tempfile::tempdir()?;
     let key_path = temp_dir.path().join("key.asc");
@@ -359,19 +369,7 @@ pub fn preview_key(key: &str) -> Result<GpgPrivateKey> {
 
 /// Attempts to import a GPG private key
 pub fn import_secret_key(key: &str) -> Result<String> {
-    if key.is_empty() {
-        bail!(GpgError::EmptyKeyInput);
-    }
-
-    let decoded = match general_purpose::STANDARD.decode(key) {
-        Ok(decoded_key) => Ok(decoded_key),
-        Err(e) => match e {
-            DecodeError::InvalidByte(offset, byte) => {
-                bail!(GpgError::InvalidByteInGpgKey(offset, byte.as_char()))
-            }
-            _ => Err(e),
-        },
-    }?;
+    let decoded = decode_key_input(key)?;
 
     let gpg_import_info = Command::new("gpg")
         .args(vec!["--import", "--batch", "--yes"])

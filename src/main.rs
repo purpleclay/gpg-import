@@ -13,13 +13,8 @@ struct Args {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// A base64 encoded GPG private key in armored format
-    #[arg(
-        short,
-        long,
-        env = "GPG_PRIVATE_KEY",
-        value_name = "BASE64_ARMORED_KEY"
-    )]
+    /// An ASCII armored GPG private key (optionally encoded as a base64 string)
+    #[arg(short, long, env = "GPG_PRIVATE_KEY", value_name = "GPG_KEY")]
     key: Option<String>,
 
     /// The passphrase of the GPG private key if set
