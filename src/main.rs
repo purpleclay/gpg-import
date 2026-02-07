@@ -37,6 +37,14 @@ struct Args {
     #[arg(long, env = "GPG_GIT_GLOBAL_CONFIG")]
     git_global_config: bool,
 
+    /// Override the committer name instead of using the value from the GPG key
+    #[arg(long, env = "GPG_GIT_COMMITTER_NAME", value_name = "NAME")]
+    git_committer_name: Option<String>,
+
+    /// Override the committer email instead of using the value from the GPG key
+    #[arg(long, env = "GPG_GIT_COMMITTER_EMAIL", value_name = "EMAIL")]
+    git_committer_email: Option<String>,
+
     /// Simulate the import without making changes
     #[arg(long, env = "GPG_DRY_RUN")]
     dry_run: bool,
@@ -103,6 +111,8 @@ fn main() -> Result<()> {
         .with_trust_level(args.trust_level.map(|t| t.trust_db_value()))
         .skip_git(args.skip_git)
         .git_global_config(args.git_global_config)
+        .with_git_committer_name(args.git_committer_name)
+        .with_git_committer_email(args.git_committer_email)
         .dry_run(args.dry_run)
         .import()
 }
