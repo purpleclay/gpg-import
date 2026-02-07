@@ -10,6 +10,8 @@ pub struct GpgImport {
     trust_level: Option<u8>,
     skip_git: bool,
     git_global_config: bool,
+    git_committer_name: Option<String>,
+    git_committer_email: Option<String>,
     dry_run: bool,
 }
 
@@ -23,6 +25,8 @@ impl GpgImport {
             trust_level: None,
             skip_git: false,
             git_global_config: false,
+            git_committer_name: None,
+            git_committer_email: None,
             dry_run: false,
         }
     }
@@ -54,6 +58,18 @@ impl GpgImport {
     /// Apply git signing configuration globally.
     pub fn git_global_config(mut self, global: bool) -> Self {
         self.git_global_config = global;
+        self
+    }
+
+    /// Override the committer name instead of using the value from the GPG key.
+    pub fn with_git_committer_name(mut self, name: Option<String>) -> Self {
+        self.git_committer_name = name;
+        self
+    }
+
+    /// Override the committer email instead of using the value from the GPG key.
+    pub fn with_git_committer_email(mut self, email: Option<String>) -> Self {
+        self.git_committer_email = email;
         self
     }
 
@@ -155,8 +171,14 @@ impl GpgImport {
 
         let signing_key = self.resolve_signing_key(private_key)?;
         let git_cfg = git::SigningConfig {
-            user_name: private_key.user_name.clone(),
-            user_email: private_key.user_email.clone(),
+            user_name: self
+                .git_committer_name
+                .clone()
+                .unwrap_or_else(|| private_key.user_name.clone()),
+            user_email: self
+                .git_committer_email
+                .clone()
+                .unwrap_or_else(|| private_key.user_email.clone()),
             key_id: signing_key,
             commit_sign: true,
             tag_sign: true,
