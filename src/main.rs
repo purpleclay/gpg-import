@@ -33,6 +33,10 @@ struct Args {
     #[arg(short, long, env = "GPG_SKIP_GIT")]
     skip_git: bool,
 
+    /// Apply git signing configuration globally
+    #[arg(long, env = "GPG_GIT_GLOBAL_CONFIG")]
+    git_global_config: bool,
+
     /// Simulate the import without making changes
     #[arg(long, env = "GPG_DRY_RUN")]
     dry_run: bool,
@@ -98,6 +102,7 @@ fn main() -> Result<()> {
         .with_fingerprint(args.fingerprint)
         .with_trust_level(args.trust_level.map(|t| t.trust_db_value()))
         .skip_git(args.skip_git)
+        .git_global_config(args.git_global_config)
         .dry_run(args.dry_run)
         .import()
 }

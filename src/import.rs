@@ -1,5 +1,6 @@
 use crate::{git, gpg};
 use anyhow::{bail, Result};
+use git2::Repository;
 
 /// A builder for importing GPG keys with optional configuration.
 pub struct GpgImport {
@@ -8,6 +9,7 @@ pub struct GpgImport {
     fingerprint: Option<String>,
     trust_level: Option<u8>,
     skip_git: bool,
+    git_global_config: bool,
     dry_run: bool,
 }
 
@@ -20,6 +22,7 @@ impl GpgImport {
             fingerprint: None,
             trust_level: None,
             skip_git: false,
+            git_global_config: false,
             dry_run: false,
         }
     }
@@ -48,6 +51,12 @@ impl GpgImport {
         self
     }
 
+    /// Apply git signing configuration globally.
+    pub fn git_global_config(mut self, global: bool) -> Self {
+        self.git_global_config = global;
+        self
+    }
+
     /// Enable dry-run mode (preview without making changes).
     pub fn dry_run(mut self, enabled: bool) -> Self {
         self.dry_run = enabled;
@@ -64,6 +73,15 @@ impl GpgImport {
         println!("> Detected GnuPG:");
         println!("{info}");
 
+        let private_key = self.import_gpg_key(&info)?;
+        self.configure_gpg_passphrase(&private_key)?;
+        self.configure_gpg_trust_level(&private_key)?;
+        self.configure_git_signing(&private_key)?;
+
+        Ok(())
+    }
+
+    fn import_gpg_key(&self, info: &gpg::GpgInfo) -> Result<gpg::GpgPrivateKey> {
         let private_key = if self.dry_run {
             gpg::preview_key(self.key.trim())?
         } else {
@@ -79,67 +97,105 @@ impl GpgImport {
             gpg::configure_agent_defaults(&info.home_dir)?;
         }
 
-        if let Some(passphrase) = &self.passphrase {
-            let passphrase_cleaned = passphrase.trim();
+        Ok(private_key)
+    }
 
-            if !self.dry_run {
-                gpg::preset_passphrase(&private_key.secret_key.keygrip, passphrase_cleaned)?;
-                gpg::preset_passphrase(&private_key.secret_subkey.keygrip, passphrase_cleaned)?;
-            }
+    fn configure_gpg_passphrase(&self, private_key: &gpg::GpgPrivateKey) -> Result<()> {
+        let Some(passphrase) = &self.passphrase else {
+            return Ok(());
+        };
 
-            println!("> Setting Passphrase:");
-            println!(
-                "keygrip: {} [{}]",
-                private_key.secret_key.keygrip, private_key.secret_key.key_id
-            );
-            println!(
-                "keygrip: {} [{}]",
-                private_key.secret_subkey.keygrip, private_key.secret_subkey.key_id
-            );
+        let passphrase_cleaned = passphrase.trim();
+
+        if !self.dry_run {
+            gpg::preset_passphrase(&private_key.secret_key.keygrip, passphrase_cleaned)?;
+            gpg::preset_passphrase(&private_key.secret_subkey.keygrip, passphrase_cleaned)?;
         }
 
-        if let Some(trust_level) = self.trust_level {
-            if !self.dry_run {
-                gpg::assign_trust_level(&private_key.secret_key.key_id, trust_level)?;
-            }
+        println!("> Setting Passphrase:");
+        println!(
+            "keygrip: {} [{}]",
+            private_key.secret_key.keygrip, private_key.secret_key.key_id
+        );
+        println!(
+            "keygrip: {} [{}]",
+            private_key.secret_subkey.keygrip, private_key.secret_subkey.key_id
+        );
 
-            println!("\n> Setting Trust Level:");
-            println!(
-                "trust_level: {} [{}]",
-                trust_level, private_key.secret_key.key_id
-            );
+        Ok(())
+    }
+
+    fn configure_gpg_trust_level(&self, private_key: &gpg::GpgPrivateKey) -> Result<()> {
+        let Some(trust_level) = self.trust_level else {
+            return Ok(());
+        };
+
+        if !self.dry_run {
+            gpg::assign_trust_level(&private_key.secret_key.key_id, trust_level)?;
         }
 
-        if !self.skip_git {
-            if let Some(repo) = git::is_repo() {
-                let signing_key = if let Some(ref fp) = self.fingerprint {
-                    if fp != &private_key.secret_key.fingerprint
-                        && fp != &private_key.secret_subkey.fingerprint
-                    {
-                        bail!(gpg::GpgError::FingerprintNotFound(fp.clone()));
-                    }
-                    fp.clone()
-                } else {
-                    private_key.secret_key.key_id.clone()
-                };
+        println!("\n> Setting Trust Level:");
+        println!(
+            "trust_level: {} [{}]",
+            trust_level, private_key.secret_key.key_id
+        );
 
-                let git_cfg = git::SigningConfig {
-                    user_name: private_key.user_name,
-                    user_email: private_key.user_email,
-                    key_id: signing_key,
-                    commit_sign: true,
-                    tag_sign: true,
-                    push_sign: true,
-                };
+        Ok(())
+    }
 
-                if !self.dry_run {
-                    git::configure_signing(&repo, &git_cfg)?;
+    fn configure_git_signing(&self, private_key: &gpg::GpgPrivateKey) -> Result<()> {
+        if self.skip_git {
+            return Ok(());
+        }
+
+        let repo = git::is_repo();
+        if !self.git_global_config && repo.is_none() {
+            return Ok(());
+        }
+
+        let signing_key = self.resolve_signing_key(private_key)?;
+        let git_cfg = git::SigningConfig {
+            user_name: private_key.user_name.clone(),
+            user_email: private_key.user_email.clone(),
+            key_id: signing_key,
+            commit_sign: true,
+            tag_sign: true,
+            push_sign: true,
+        };
+
+        self.apply_git_config(&git_cfg, repo.as_ref())?;
+        println!("{git_cfg}");
+
+        Ok(())
+    }
+
+    fn resolve_signing_key(&self, private_key: &gpg::GpgPrivateKey) -> Result<String> {
+        match &self.fingerprint {
+            Some(fp) => {
+                if fp != &private_key.secret_key.fingerprint
+                    && fp != &private_key.secret_subkey.fingerprint
+                {
+                    bail!(gpg::GpgError::FingerprintNotFound(fp.clone()));
                 }
-
-                println!("\n> Git config set:");
-                println!("{git_cfg}");
+                Ok(fp.clone())
             }
+            None => Ok(private_key.secret_key.key_id.clone()),
         }
+    }
+
+    fn apply_git_config(&self, cfg: &git::SigningConfig, repo: Option<&Repository>) -> Result<()> {
+        if self.git_global_config {
+            if !self.dry_run {
+                git::configure_signing_global(cfg)?;
+            }
+            println!("\n> Git config set (global):");
+        } else if let Some(repo) = repo {
+            if !self.dry_run {
+                git::configure_signing(repo, cfg)?;
+            }
+            println!("\n> Git config set (local):");
+        }
+
         Ok(())
     }
 }
