@@ -1,6 +1,6 @@
 [package]
 authors = ["Purple Clay <purpleclaygh@gmail.com>"]
-description = "Easily import a GPG key within any CI workflow"
+description = "Import and configure GPG signing for git"
 name = "gpg-import"
 edition = "2021"
 license = "MIT"
