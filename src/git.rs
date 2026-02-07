@@ -1,5 +1,5 @@
 use anyhow::Result;
-use git2::Repository;
+use git2::{Config, Repository};
 use std::fmt::{self, Display};
 
 /// Git GPG signing configuration that will written to the local
@@ -43,7 +43,16 @@ pub fn is_repo() -> Option<Repository> {
 /// the provided config
 pub fn configure_signing(repo: &Repository, cfg: &SigningConfig) -> Result<()> {
     let mut config = repo.config()?;
+    apply_signing_config(&mut config, cfg)
+}
 
+/// Configures GPG signing globally based on the provided config
+pub fn configure_signing_global(cfg: &SigningConfig) -> Result<()> {
+    let mut config = Config::open_default()?;
+    apply_signing_config(&mut config, cfg)
+}
+
+fn apply_signing_config(config: &mut Config, cfg: &SigningConfig) -> Result<()> {
     config.set_str("user.name", &cfg.user_name)?;
     config.set_str("user.email", &cfg.user_email)?;
     config.set_str("user.signingKey", &cfg.key_id)?;
