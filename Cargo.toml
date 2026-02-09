@@ -4,7 +4,7 @@ description = "Import and configure GPG signing for git"
 name = "gpg-import"
 edition = "2021"
 license = "MIT"
-version = "0.8.0"
+version = "0.9.0"
 
 [profile.release]
 strip = "debuginfo"

@@ -1,5 +1,9 @@
 # GPG Import
 
+![Nix](https://img.shields.io/badge/Nix-5277C3?logo=nixos&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-CE412B?logo=rust&logoColor=white)
+[![MIT](https://img.shields.io/badge/MIT-gray?logo=github&logoColor=white)](LICENSE)
+
 Import and configure GPG signing for git. Runs on Linux and MacOS.
 
 ## Features
@@ -94,7 +98,7 @@ All options can be set via CLI flags or environment variables:
 
 | Flag                    | Environment Variable      | Description                                                |
 | ----------------------- | ------------------------- | ---------------------------------------------------------- |
-| `-k, --key`             | `GPG_PRIVATE_KEY`         | GPG private key (ASCII armored, optionally base64 encoded) |
+| `-k, --key`             | `GPG_PRIVATE_KEY`         | GPG private key (use `-` for stdin or `@path` for file) |
 | `-p, --passphrase`      | `GPG_PASSPHRASE`          | Passphrase for the GPG key                                 |
 | `-f, --fingerprint`     | `GPG_FINGERPRINT`         | Fingerprint of a specific key or subkey to use for signing |
 | `-t, --trust-level`     | `GPG_TRUST_LEVEL`         | Trust level for the key (1-5)                              |
@@ -120,6 +124,22 @@ All options can be set via CLI flags or environment variables:
 
 ```sh
 gpg-import --key "$GPG_PRIVATE_KEY" --passphrase "$GPG_PASSPHRASE"
+```
+
+### Import from stdin
+
+Pipe a key directly from GPG:
+
+```sh
+gpg --armor --export-secret-key batman@dc.com | gpg-import --key -
+```
+
+### Import from file
+
+Read a key from a file:
+
+```sh
+gpg-import --key @/path/to/private.key
 ```
 
 ### Global git configuration

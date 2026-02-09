@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{command, Parser, Subcommand, ValueEnum};
 use gpg_import::import::GpgImport;
+use std::io::Read;
 use std::println;
 
 pub mod built_info {
@@ -13,7 +14,8 @@ struct Args {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// An ASCII armored GPG private key (optionally encoded as a base64 string)
+    /// An ASCII armored GPG private key (optionally base64 encoded). Use - for
+    /// stdin or @path to read from a file
     #[arg(short, long, env = "GPG_PRIVATE_KEY", value_name = "GPG_KEY")]
     key: Option<String>,
 
@@ -86,6 +88,20 @@ impl TrustLevel {
     }
 }
 
+/// Resolves the key input from stdin, a file, or a direct value.
+fn resolve_key_input(key: &str) -> Result<String> {
+    if key == "-" {
+        let mut buffer = String::default();
+        std::io::stdin().read_to_string(&mut buffer)?;
+        Ok(buffer)
+    } else if let Some(path) = key.strip_prefix('@') {
+        std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read key file '{}': {}", path, e))
+    } else {
+        Ok(key.to_string())
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -103,7 +119,8 @@ fn main() -> Result<()> {
         }
     }
 
-    let key = args.key.ok_or_else(|| anyhow::anyhow!("Key is required for GPG import. Use --key or set GPG_PRIVATE_KEY environment variable."))?;
+    let key_input = args.key.ok_or_else(|| anyhow::anyhow!("Key is required for GPG import. Use --key or set GPG_PRIVATE_KEY environment variable."))?;
+    let key = resolve_key_input(&key_input)?;
 
     GpgImport::new(key)
         .with_passphrase(args.passphrase)
