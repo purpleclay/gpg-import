@@ -68,7 +68,7 @@ jobs:
           useDaemon: false
 
       - name: Cache Rust
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "clippy"
 
@@ -97,7 +97,7 @@ jobs:
         run: cargo install cargo-zigbuild
 
       - name: Cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build with zigbuild
         run: cargo zigbuild --locked --release --target x86_64-unknown-linux-musl
@@ -126,7 +126,7 @@ jobs:
           useDaemon: false
 
       - name: Cache Rust
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "test-${{ matrix.os }}"
 
@@ -176,7 +176,7 @@ jobs:
         run: cargo install cargo-zigbuild
 
       - name: Cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build with zigbuild
         if: ${{ matrix.platform.use-zigbuild }}
