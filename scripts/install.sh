@@ -11,6 +11,7 @@
 APP_NAME="gpg-import"
 HAS_CURL="$(command -v curl >/dev/null 2>&1 && echo true || echo false)"
 HAS_WGET="$(command -v wget >/dev/null 2>&1 && echo true || echo false)"
+GITHUB_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
 datefmt() { date +'%Y-%m-%dT%H:%M:%S'; }
 
@@ -39,21 +40,21 @@ debug() {
 initTarget() {
   arch="$(uname -m)"
   case "$arch" in
-    x86_64) arch="x86_64" ;;
-    amd64) arch="x86_64" ;;
-    aarch64) arch="aarch64" ;;
-    arm64) arch="aarch64" ;; # Keep unknown architectures as-is
+  x86_64) arch="x86_64" ;;
+  amd64) arch="x86_64" ;;
+  aarch64) arch="aarch64" ;;
+  arm64) arch="aarch64" ;;
   esac
 
   case "$(uname -s)" in
-    "Linux")
-      platform="unknown-linux-musl"
-      TARGET="$arch-$platform"
-      ;;
-    "Darwin")
-      platform="apple-darwin"
-      TARGET="$arch-$platform"
-      ;;
+  "Linux")
+    platform="unknown-linux-musl"
+    TARGET="$arch-$platform"
+    ;;
+  "Darwin")
+    platform="apple-darwin"
+    TARGET="$arch-$platform"
+    ;;
   esac
 }
 
@@ -75,9 +76,17 @@ download() {
   output=$2
 
   if [ "${HAS_CURL}" = "true" ]; then
-    curl -sSL -o "${output}" "${url}"
+    if [ -n "${GITHUB_TOKEN}" ]; then
+      curl -sSL -H "Authorization: Bearer ${GITHUB_TOKEN}" -o "${output}" "${url}"
+    else
+      curl -sSL -o "${output}" "${url}"
+    fi
   elif [ "${HAS_WGET}" = "true" ]; then
-    wget -q -O "${output}" "${url}"
+    if [ -n "${GITHUB_TOKEN}" ]; then
+      wget -q --header "Authorization: Bearer ${GITHUB_TOKEN}" -O "${output}" "${url}"
+    else
+      wget -q -O "${output}" "${url}"
+    fi
   fi
 }
 
@@ -90,14 +99,8 @@ getTag() {
   if [ -z "${GPG_IMPORT_VERSION}" ]; then
     TAG=$(getLatestRelease)
   else
-    if ! echo "${GPG_IMPORT_VERSION}" | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?(\+[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$"; then
-      error "Invalid version provided. Please provide a valid version: e.g. $(getLatestRelease)"
-    fi
-
-    _versions=$(download "https://api.github.com/repos/purpleclay/$APP_NAME/releases" - | grep "tag_name" | cut -d'"' -f4)
-    debug "Available versions: $(echo "${_versions}" | tr '\n' ' ')"
-    if ! echo "${_versions}" | grep -q "${GPG_IMPORT_VERSION}"; then
-      error "Version ${GPG_IMPORT_VERSION} does not exist. Please provide a valid version: e.g. $(getLatestRelease)"
+    if ! echo "${GPG_IMPORT_VERSION}" | grep -qE "^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$"; then
+      error "Invalid version provided. Please provide a valid semver: e.g. 0.1.0 or v0.1.0"
     fi
 
     debug "Using provided version: ${GPG_IMPORT_VERSION}"
@@ -170,8 +173,8 @@ verify() {
     INSTALLED_VERSION="$(echo "$INSTALLED_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
   fi
 
-  if [ "${INSTALLED_VERSION}" != "${TAG}" ]; then
-    error "Found version ${INSTALLED_VERSION} of ${APP_NAME} and not expected installed version of $TAG"
+  if [ "${INSTALLED_VERSION}" != "${TAG#v}" ]; then
+    error "Found version ${INSTALLED_VERSION} of ${APP_NAME} and not expected installed version of ${TAG#v}"
   fi
 
   info "Installation verified"
@@ -212,39 +215,39 @@ done
 set -u
 while [ $# -gt 0 ]; do
   case $1 in
-    '--debug')
-      DEBUG="true"
-      ;;
-    '--dir' | -d)
-      shift
-      if [ $# -eq 0 ]; then
-        error "Please provide a valid location for the install directory"
-      fi
+  '--debug')
+    DEBUG="true"
+    ;;
+  '--dir' | -d)
+    shift
+    if [ $# -eq 0 ]; then
+      error "Please provide a valid location for the install directory"
+    fi
 
-      if [ ! -d "${1}" ]; then
-        error "Directory ${1} does not exist"
-      fi
+    if [ ! -d "${1}" ]; then
+      error "Directory ${1} does not exist"
+    fi
 
-      INSTALL_DIR="${1}"
-      ;;
-    '--no-sudo')
-      USE_SUDO="false"
-      ;;
-    '--skip-verify')
-      VERIFY="false"
-      ;;
-    '--version' | -v)
-      shift
-      if [ $# -eq 0 ]; then
-        error "Please provide a valid version: e.g. --version $(getLatestRelease)"
-      fi
-      GPG_IMPORT_VERSION="${1}"
-      ;;
-    *)
-      error \
-        "Invalid flag provided '$1'." \
-        "Run '$0 --help' to see the available options"
-      ;;
+    INSTALL_DIR="${1}"
+    ;;
+  '--no-sudo')
+    USE_SUDO="false"
+    ;;
+  '--skip-verify')
+    VERIFY="false"
+    ;;
+  '--version' | -v)
+    shift
+    if [ $# -eq 0 ]; then
+      error "Please provide a valid version: e.g. --version 0.1.0"
+    fi
+    GPG_IMPORT_VERSION="${1}"
+    ;;
+  *)
+    error \
+      "Invalid flag provided '$1'." \
+      "Run '$0 --help' to see the available options"
+    ;;
   esac
   shift
 done
