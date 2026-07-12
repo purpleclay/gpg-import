@@ -84,10 +84,18 @@ fn parse_gpg_info(input: &str) -> IResult<&str, GpgInfo> {
     ))
 }
 
+/// Builds a `Command` for the given GPG binary, pinned to the `C` locale so
+/// that any human-oriented output it produces is deterministic and untranslated
+fn gpg_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    cmd.env("LC_ALL", "C").env_remove("LANGUAGE");
+    cmd
+}
+
 /// Inspects the OS for a GPG client and retrieves details about the
 /// currently installed version
 pub fn detect_version() -> Result<GpgInfo> {
-    let gpg_details = Command::new("gpg").arg("--version").output()?;
+    let gpg_details = gpg_command("gpg").arg("--version").output()?;
 
     let output = String::from_utf8(gpg_details.stdout)?;
     let gpg_info = output.parse::<GpgInfo>()?;
@@ -122,7 +130,7 @@ allow-loopback-pinentry",
 }
 
 fn reload_agent() -> Result<()> {
-    Command::new("gpg-connect-agent")
+    gpg_command("gpg-connect-agent")
         .args(vec!["RELOADAGENT", "/bye"])
         .output()?;
 
@@ -233,10 +241,18 @@ fn format_expiration_in_days(secs_since_epoch: i64) -> String {
     format!("{} ({})", expires_on.to_rfc2822(), days_text)
 }
 
-fn parse_gpg_import(input: &str) -> IResult<&str, String> {
-    let (i, _) = take_until("gpg: key ")(input)?;
-    let (i, key) = separated_pair(tag("gpg: key"), tag(" "), take_until(":")).parse(i)?;
-    Ok((i, key.1.into()))
+/// Extracts the fingerprint of the first successfully imported key from
+/// `--status-file` records (looks for an `IMPORT_OK` line), e.g.:
+///
+/// ```text
+/// [GNUPG:] IMPORT_OK 17 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
+/// ```
+fn parse_status_import(status: &str) -> Option<String> {
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("[GNUPG:] IMPORT_OK "))
+        .and_then(|rest| rest.split_whitespace().nth(1))
+        .map(String::from)
 }
 
 fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
@@ -347,7 +363,7 @@ pub fn preview_key(key: &str) -> Result<GpgPrivateKey> {
     let key_path = temp_dir.path().join("key.asc");
     fs::write(&key_path, &decoded)?;
 
-    let gpg_preview = Command::new("gpg")
+    let gpg_preview = gpg_command("gpg")
         .args([
             "--import-options",
             "show-only",
@@ -375,31 +391,52 @@ pub fn preview_key(key: &str) -> Result<GpgPrivateKey> {
 pub fn import_secret_key(key: &str) -> Result<String> {
     let decoded = decode_key_input(key)?;
 
-    let gpg_import_info = Command::new("gpg")
-        .args(vec!["--import", "--batch", "--yes"])
+    let status_file = tempfile::NamedTempFile::new()?;
+    let status_path = status_file
+        .path()
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("status file path is not valid UTF-8"))?;
+
+    let mut gpg_import = gpg_command("gpg")
+        .args(["--status-file", status_path, "--import", "--batch", "--yes"])
         .stdin(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()?;
 
-    gpg_import_info
+    gpg_import
         .stdin
+        .take()
         .ok_or_else(|| anyhow::anyhow!("failed to open stdin for gpg process"))?
         .write_all(&decoded)?;
 
-    let mut s = String::default();
-    gpg_import_info
+    let mut stderr = String::default();
+    gpg_import
         .stderr
+        .take()
         .ok_or_else(|| anyhow::anyhow!("failed to open stderr for gpg process"))?
-        .read_to_string(&mut s)?;
+        .read_to_string(&mut stderr)?;
 
-    let (_, key) =
-        parse_gpg_import(&s).map_err(|_| GpgError::InvalidGpgKeyData(s.trim().to_string()))?;
-    Ok(key)
+    let status = gpg_import.wait()?;
+    let status_records = fs::read_to_string(status_file.path())?;
+
+    match (status.success(), parse_status_import(&status_records)) {
+        (true, Some(fingerprint)) => Ok(fingerprint),
+        _ => {
+            let detail = stderr.trim();
+            let detail = if detail.is_empty() {
+                status_records.trim()
+            } else {
+                detail
+            };
+            Err(GpgError::InvalidGpgKeyData(detail.to_string()).into())
+        }
+    }
 }
 
 /// Extracts internal details for a given GPG private key and verifies its validity
 pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
-    let gpg_key_details = Command::new("gpg")
+    let gpg_key_details = gpg_command("gpg")
         .args(vec![
             "--batch",
             "--with-colons",
@@ -442,7 +479,7 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
 /// Presets the passphrase for a given keygrip, ensuring it is cached for any
 /// subsequent signing request
 pub fn preset_passphrase(keygrip: &str, passphrase: &str) -> Result<()> {
-    let set_passphrase = Command::new("gpg-connect-agent")
+    let set_passphrase = gpg_command("gpg-connect-agent")
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()?;
@@ -465,7 +502,7 @@ pub fn preset_passphrase(keygrip: &str, passphrase: &str) -> Result<()> {
 
 /// Assign a trust level to an imported key
 pub fn assign_trust_level(key_id: &str, trust_level: u8) -> Result<()> {
-    let set_trust = Command::new("gpg")
+    let set_trust = gpg_command("gpg")
         .args(vec![
             "--batch",
             "--no-tty",
@@ -494,7 +531,58 @@ mod tests {
     use super::*;
 
     use chrono::Duration;
+    use std::ffi::OsStr;
     use tempfile::TempDir;
+
+    #[test]
+    fn gpg_command_pins_c_locale() {
+        let cmd = gpg_command("gpg");
+        let envs: Vec<_> = cmd.get_envs().collect();
+
+        assert!(envs.contains(&(OsStr::new("LC_ALL"), Some(OsStr::new("C")))));
+        assert!(envs.contains(&(OsStr::new("LANGUAGE"), None)));
+    }
+
+    #[test]
+    fn parse_status_import_extracts_fingerprint() {
+        let status = "[GNUPG:] KEY_CONSIDERED BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127 0
+[GNUPG:] IMPORT_OK 17 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
+[GNUPG:] IMPORTED FDEFE8AB8796E127 batman <batman@dc.com>
+[GNUPG:] IMPORT_RES 1 0 1 0 0 0 0 0 0 0 1 0 0 0 0";
+
+        let result = parse_status_import(status);
+        assert_eq!(
+            result,
+            Some("BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_status_import_ignores_localised_noise() {
+        // Regression: previously anchored on gettext-translated "gpg: key " stderr
+        // prose; status-fd records are locale-stable regardless of surrounding output.
+        let status = "gpg: Schlüssel BEEA4CDB4B0A80CB: geheimer Schlüssel importiert
+[GNUPG:] IMPORT_OK 17 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127";
+
+        let result = parse_status_import(status);
+        assert_eq!(
+            result,
+            Some("BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_status_import_returns_none_without_import_ok() {
+        let status = "[GNUPG:] NODATA 1
+[GNUPG:] IMPORT_RES 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0";
+
+        assert_eq!(parse_status_import(status), None);
+    }
+
+    #[test]
+    fn parse_status_import_returns_none_for_empty_input() {
+        assert_eq!(parse_status_import(""), None);
+    }
 
     #[test]
     fn parse_gpg_version_output() {
