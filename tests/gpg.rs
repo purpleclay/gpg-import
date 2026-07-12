@@ -215,6 +215,67 @@ fn import_secret_key_base64() {
     assert!(sign_result.is_ok(), "Failed to create and sign test file");
 }
 
+/// Temporarily overrides locale env vars for the current process, restoring
+/// the original values (or absence) when dropped
+struct LocaleGuard {
+    originals: Vec<(&'static str, Option<String>)>,
+}
+
+impl LocaleGuard {
+    fn set(vars: &[(&'static str, &str)]) -> Self {
+        let originals = vars
+            .iter()
+            .map(|(name, value)| {
+                let original = env::var(name).ok();
+                env::set_var(name, value);
+                (*name, original)
+            })
+            .collect();
+
+        Self { originals }
+    }
+}
+
+impl Drop for LocaleGuard {
+    fn drop(&mut self) {
+        for (name, original) in &self.originals {
+            match original {
+                Some(value) => env::set_var(name, value),
+                None => env::remove_var(name),
+            }
+        }
+    }
+}
+
+#[test]
+#[serial]
+fn import_secret_key_under_non_c_locale() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let fixture = fixture.unwrap();
+
+    // gpg's status-fd records are locale-stable, unlike its stderr prose.
+    // This asserts the import succeeds even when the calling process runs
+    // under a locale that would gettext-translate gpg's human-readable output.
+    let _locale_guard = LocaleGuard::set(&[
+        ("LANG", "de_DE.UTF-8"),
+        ("LC_ALL", "de_DE.UTF-8"),
+        ("LANGUAGE", "de"),
+    ]);
+
+    let gpg_key = include_str!("testdata/no-passphrase.base64.key");
+    let result = gpg::import_secret_key(gpg_key);
+    assert!(
+        result.is_ok(),
+        "Failed to import GPG key under non-C locale: {:?}",
+        result.err()
+    );
+
+    let fingerprint = result.unwrap();
+    let sign_result = fixture.create_and_sign_file(&fingerprint);
+    assert!(sign_result.is_ok(), "Failed to create and sign test file");
+}
+
 #[test]
 #[serial]
 fn import_secret_key_base64_with_passphrase() {
@@ -328,6 +389,7 @@ fn assign_trust_level() {
 }
 
 #[test]
+#[serial]
 fn preview_key_base64() {
     let gpg_key = include_str!("testdata/no-passphrase.base64.key");
     let result = gpg::preview_key(gpg_key);
@@ -426,6 +488,7 @@ fn import_secret_key_ascii_armored() {
 }
 
 #[test]
+#[serial]
 fn preview_key_ascii_armored() {
     let gpg_key = include_str!("testdata/no-passphrase.asc");
     let result = gpg::preview_key(gpg_key);
