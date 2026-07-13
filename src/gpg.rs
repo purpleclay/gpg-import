@@ -6,8 +6,7 @@ use nom::{
     bytes::complete::{tag, take_until},
     character::complete::not_line_ending,
     error::Error,
-    multi::count,
-    sequence::{pair, separated_pair},
+    sequence::separated_pair,
     AsChar, Finish, IResult, Parser,
 };
 use std::{
@@ -140,14 +139,31 @@ fn reload_agent() -> Result<()> {
 /// A GPG private key
 #[derive(Debug)]
 pub struct GpgPrivateKey {
-    /// The user name associated with the private key
-    pub user_name: String,
-    /// The user email associated with the private key
-    pub user_email: String,
+    /// The user identities associated with the private key; the first is
+    /// used as the default git identity
+    pub uids: Vec<GpgUid>,
     /// Internal details of the secret key
     pub secret_key: GpgKeyDetails,
-    /// Internal details of the secret subkey
-    pub secret_subkey: GpgKeyDetails,
+    /// Internal details of the secret subkeys (0..N)
+    pub subkeys: Vec<GpgKeyDetails>,
+}
+
+impl GpgPrivateKey {
+    /// The primary user identity, used as the default git identity
+    pub fn primary_uid(&self) -> &GpgUid {
+        self.uids.first().expect(
+            "GpgPrivateKey invariant violated: uids must be non-empty (only construct via parsing)",
+        )
+    }
+}
+
+/// A user identity associated with a GPG key
+#[derive(Debug, PartialEq, Eq)]
+pub struct GpgUid {
+    /// The name portion of the user id
+    pub name: String,
+    /// The email portion of the user id
+    pub email: String,
 }
 
 /// Contains internal details of a GPG private key
@@ -163,29 +179,54 @@ pub struct GpgKeyDetails {
     pub key_id: String,
     /// A 20-byte hash identifier for the private key
     pub keygrip: String,
+    /// The operations this key or subkey is capable of
+    pub capabilities: GpgCapabilities,
+}
+
+/// The set of operations a GPG key or subkey is capable of, derived from the
+/// lowercase letters in the colon-format capabilities field. Uppercase
+/// letters in that field summarise the primary key's aggregate capability
+/// across all subkeys and are ignored here in favour of this key's own.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct GpgCapabilities {
+    /// The key can be used to create signatures
+    pub sign: bool,
+    /// The key can be used to encrypt data
+    pub encrypt: bool,
+    /// The key can be used to certify other keys
+    pub certify: bool,
+    /// The key can be used for authentication
+    pub authenticate: bool,
+}
+
+impl From<&str> for GpgCapabilities {
+    fn from(field: &str) -> Self {
+        GpgCapabilities {
+            sign: field.contains('s'),
+            encrypt: field.contains('e'),
+            certify: field.contains('c'),
+            authenticate: field.contains('a'),
+        }
+    }
 }
 
 impl FromStr for GpgPrivateKey {
-    type Err = Error<String>;
+    type Err = GpgError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match parse_gpg_key_details(s).finish() {
-            Ok((_, info)) => Ok(info),
-            Err(Error { input, code }) => Err(Error {
-                input: input.to_string(),
-                code,
-            }),
-        }
+        parse_gpg_key_details(s)
     }
 }
 
 impl Display for GpgPrivateKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(
-            f,
-            "user:           {} <{}>",
-            self.user_name, self.user_email
-        )?;
+        for uid in &self.uids {
+            if uid.email.is_empty() {
+                writeln!(f, "user:           {}", uid.name)?;
+            } else {
+                writeln!(f, "user:           {} <{}>", uid.name, uid.email)?;
+            }
+        }
         writeln!(f, "fingerprint:    {}", self.secret_key.fingerprint)?;
         writeln!(f, "keygrip:        {}", self.secret_key.keygrip)?;
         writeln!(f, "key_id:         {}", self.secret_key.key_id)?;
@@ -195,26 +236,29 @@ impl Display for GpgPrivateKey {
             format_timestamp(self.secret_key.creation_date)
         )?;
 
-        if self.secret_key.expiration_date.is_some() {
+        if let Some(expiration_date) = self.secret_key.expiration_date {
             writeln!(
                 f,
                 "expires_on:     {}",
-                format_expiration_in_days(self.secret_key.expiration_date.unwrap())
+                format_expiration_in_days(expiration_date)
             )?;
         }
-        writeln!(f, "sub_keygrip:    {}", self.secret_subkey.keygrip)?;
-        writeln!(f, "sub_key_id:     {}", self.secret_subkey.key_id)?;
-        writeln!(
-            f,
-            "sub_created_on: {}",
-            format_timestamp(self.secret_subkey.creation_date)
-        )?;
-        if self.secret_subkey.expiration_date.is_some() {
+
+        for subkey in &self.subkeys {
+            writeln!(f, "sub_keygrip:    {}", subkey.keygrip)?;
+            writeln!(f, "sub_key_id:     {}", subkey.key_id)?;
             writeln!(
                 f,
-                "sub_expires_on: {}",
-                format_expiration_in_days(self.secret_subkey.expiration_date.unwrap())
+                "sub_created_on: {}",
+                format_timestamp(subkey.creation_date)
             )?;
+            if let Some(expiration_date) = subkey.expiration_date {
+                writeln!(
+                    f,
+                    "sub_expires_on: {}",
+                    format_expiration_in_days(expiration_date)
+                )?;
+            }
         }
         Ok(())
     }
@@ -255,57 +299,205 @@ fn parse_status_import(status: &str) -> Option<String> {
         .map(String::from)
 }
 
-fn parse_gpg_key_details(input: &str) -> IResult<&str, GpgPrivateKey> {
-    let (i, _) = (tag("sec"), count(pair(take_until(":"), tag(":")), 4)).parse(input)?;
-    let (i, sec) = count(pair(take_until(":"), tag(":")), 3).parse(i)?;
-    let (i, _) = (take_until("fpr"), tag("fpr"), count(tag(":"), 9)).parse(i)?;
-    let (i, sec_fpr) = take_until(":")(i)?;
-    let (i, _) = (take_until("grp"), tag("grp"), count(tag(":"), 9)).parse(i)?;
-    let (i, sec_grp) = take_until(":")(i)?;
-    let (i, _) = (
-        take_until("uid"),
-        tag("uid"),
-        count(pair(take_until(":"), tag(":")), 9),
-    )
-        .parse(i)?;
-    let (i, uid) = separated_pair(take_until(" <"), tag(" <"), take_until(">")).parse(i)?;
-    let (i, _) = take_until("ssb")(i)?;
-    let (i, _) = (tag("ssb"), count(pair(take_until(":"), tag(":")), 4)).parse(i)?;
-    let (i, ssb) = count(pair(take_until(":"), tag(":")), 3).parse(i)?;
-    let (i, _) = (take_until("fpr"), tag("fpr"), count(tag(":"), 9)).parse(i)?;
-    let (i, ssb_fpr) = take_until(":")(i)?;
-    let (i, _) = (take_until("grp"), tag("grp"), count(tag(":"), 9)).parse(i)?;
-    let (i, ssb_grp) = take_until(":")(i)?;
+/// Field indices (0-based, after splitting a colon-format line on `:`),
+/// verified against real `gpg --with-colons --with-keygrip` output.
+mod colon_field {
+    pub const KEY_ID: usize = 4;
+    pub const CREATION_DATE: usize = 5;
+    pub const EXPIRATION_DATE: usize = 6;
+    pub const CAPABILITIES: usize = 11;
+    /// Shared by `fpr` (fingerprint), `grp` (keygrip) and `uid` (user id text)
+    pub const RECORD_VALUE: usize = 9;
+}
 
-    Ok((
-        i,
-        GpgPrivateKey {
-            user_name: uid.0.into(),
-            user_email: uid.1.into(),
-            secret_key: GpgKeyDetails {
-                creation_date: sec[1].0.parse::<i64>().unwrap(),
-                expiration_date: if sec[2].0.is_empty() {
-                    None
+/// Parses gpg `--with-colons --with-keygrip` output for a single private key
+/// into a [`GpgPrivateKey`]. Each line is dispatched independently on its
+/// leading record tag, so a `uid` value containing text that happens to
+/// match another tag (e.g. `ssb`) cannot derail parsing.
+fn parse_gpg_key_details(input: &str) -> Result<GpgPrivateKey, GpgError> {
+    let mut secret_key: Option<GpgKeyDetails> = None;
+    let mut subkeys: Vec<GpgKeyDetails> = Vec::new();
+    let mut uids: Vec<GpgUid> = Vec::new();
+
+    for (line_no, line) in input.lines().enumerate() {
+        let fields: Vec<&str> = line.split(':').collect();
+
+        match fields.first().copied().unwrap_or_default() {
+            "sec" | "ssb" => {
+                let details = GpgKeyDetails {
+                    key_id: field(&fields, colon_field::KEY_ID, line_no, line)?.to_string(),
+                    creation_date: parse_timestamp(
+                        field(&fields, colon_field::CREATION_DATE, line_no, line)?,
+                        line_no,
+                        line,
+                    )?,
+                    expiration_date: parse_optional_timestamp(
+                        field(&fields, colon_field::EXPIRATION_DATE, line_no, line)?,
+                        line_no,
+                        line,
+                    )?,
+                    fingerprint: String::new(),
+                    keygrip: String::new(),
+                    capabilities: field(&fields, colon_field::CAPABILITIES, line_no, line)?.into(),
+                };
+
+                if fields[0] == "sec" {
+                    if secret_key.is_some() {
+                        return Err(GpgError::InvalidGpgKeyData(
+                            "multiple primary keys (sec records) found in input; expected exactly one"
+                                .to_string(),
+                        ));
+                    }
+                    secret_key = Some(details);
                 } else {
-                    Some(sec[2].0.parse::<i64>().unwrap())
-                },
-                fingerprint: sec_fpr.into(),
-                key_id: sec[0].0.into(),
-                keygrip: sec_grp.into(),
-            },
-            secret_subkey: GpgKeyDetails {
-                creation_date: ssb[1].0.parse::<i64>().unwrap(),
-                expiration_date: if ssb[2].0.is_empty() {
-                    None
-                } else {
-                    Some(ssb[2].0.parse::<i64>().unwrap())
-                },
-                fingerprint: ssb_fpr.into(),
-                key_id: ssb[0].0.into(),
-                keygrip: ssb_grp.into(),
-            },
-        },
-    ))
+                    subkeys.push(details);
+                }
+            }
+            "fpr" => {
+                current_key(&mut secret_key, &mut subkeys, line_no, line)?.fingerprint =
+                    field(&fields, colon_field::RECORD_VALUE, line_no, line)?.to_string();
+            }
+            "grp" => {
+                current_key(&mut secret_key, &mut subkeys, line_no, line)?.keygrip =
+                    field(&fields, colon_field::RECORD_VALUE, line_no, line)?.to_string();
+            }
+            "uid" => {
+                uids.push(parse_uid(
+                    field(&fields, colon_field::RECORD_VALUE, line_no, line)?,
+                    line_no,
+                    line,
+                )?);
+            }
+            _ => {}
+        }
+    }
+
+    let secret_key =
+        secret_key.ok_or_else(|| GpgError::InvalidGpgKeyData("missing sec record".to_string()))?;
+    if uids.is_empty() {
+        return Err(GpgError::InvalidGpgKeyData(
+            "missing uid record".to_string(),
+        ));
+    }
+
+    validate_key_details(&secret_key, "primary key")?;
+    for (i, subkey) in subkeys.iter().enumerate() {
+        validate_key_details(subkey, &format!("subkey {}", i + 1))?;
+    }
+
+    Ok(GpgPrivateKey {
+        uids,
+        secret_key,
+        subkeys,
+    })
+}
+
+/// Ensures a `sec`/`ssb` record was followed by its `fpr` and `grp` records;
+/// without them the fingerprint/keygrip are silently empty, which surfaces
+/// as a confusing failure much later (e.g. presetting the passphrase for an
+/// empty keygrip) rather than here, at parse time.
+fn validate_key_details(details: &GpgKeyDetails, label: &str) -> Result<(), GpgError> {
+    if details.fingerprint.is_empty() || details.keygrip.is_empty() {
+        return Err(GpgError::InvalidGpgKeyData(format!(
+            "{label} is missing its fingerprint or keygrip (no matching fpr/grp record)"
+        )));
+    }
+    Ok(())
+}
+
+/// Returns the key details that a following `fpr`/`grp` record applies to:
+/// the most recently opened subkey, falling back to the primary key.
+fn current_key<'a>(
+    secret_key: &'a mut Option<GpgKeyDetails>,
+    subkeys: &'a mut [GpgKeyDetails],
+    line_no: usize,
+    line: &str,
+) -> Result<&'a mut GpgKeyDetails, GpgError> {
+    subkeys
+        .last_mut()
+        .or(secret_key.as_mut())
+        .ok_or_else(|| GpgError::MalformedKeyRecord(line_no + 1, line.to_string()))
+}
+
+fn field<'a>(
+    fields: &[&'a str],
+    idx: usize,
+    line_no: usize,
+    line: &str,
+) -> Result<&'a str, GpgError> {
+    fields
+        .get(idx)
+        .copied()
+        .ok_or_else(|| GpgError::MalformedKeyRecord(line_no + 1, line.to_string()))
+}
+
+fn parse_timestamp(value: &str, line_no: usize, line: &str) -> Result<i64, GpgError> {
+    value
+        .parse::<i64>()
+        .map_err(|_| GpgError::MalformedKeyRecord(line_no + 1, line.to_string()))
+}
+
+fn parse_optional_timestamp(
+    value: &str,
+    line_no: usize,
+    line: &str,
+) -> Result<Option<i64>, GpgError> {
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        parse_timestamp(value, line_no, line).map(Some)
+    }
+}
+
+/// Decodes GnuPG's `--with-colons` escaping for free-form text fields
+/// (currently only the uid field). Bytes that would be ambiguous in the
+/// colon-delimited format -- notably `:` and `\` -- are written as
+/// `\xHH`; verified against real gpg output (`Batman: Dark Knight` is
+/// emitted as `Batman\x3a Dark Knight`, a literal `\` as `\x5c`).
+/// Everything else, including multi-byte UTF-8, passes through as-is.
+fn unescape_colon_field(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 3 < bytes.len() && bytes[i + 1] == b'x' {
+            let hi = (bytes[i + 2] as char).to_digit(16);
+            let lo = (bytes[i + 3] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 4;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Parses a uid field, expected to look like `Name <email>`. GnuPG doesn't
+/// guarantee an email is present (e.g. name-only user ids), so a missing
+/// ` <...>` segment is treated as a name-only uid rather than an error; an
+/// unterminated one (` <` with no closing `>`) is still malformed.
+fn parse_uid(value: &str, line_no: usize, line: &str) -> Result<GpgUid, GpgError> {
+    let value = unescape_colon_field(value);
+    let Some((name, rest)) = value.split_once(" <") else {
+        return Ok(GpgUid {
+            name: value.to_string(),
+            email: String::new(),
+        });
+    };
+
+    let email = rest
+        .strip_suffix('>')
+        .ok_or_else(|| GpgError::MalformedKeyRecord(line_no + 1, line.to_string()))?;
+
+    Ok(GpgUid {
+        name: name.to_string(),
+        email: email.to_string(),
+    })
 }
 
 /// Errors that can occur when working with GPG keys
@@ -322,6 +514,10 @@ pub enum GpgError {
     /// The decoded data is not a valid GPG key
     #[error("decoded data is not a valid gpg key: {0}")]
     InvalidGpgKeyData(String),
+
+    /// A colon-format record from gpg could not be parsed
+    #[error("malformed gpg colon record on line {0}: {1}")]
+    MalformedKeyRecord(usize, String),
 
     /// The specified key was not found in the keyring
     #[error("gpg key not found: {0}")]
@@ -380,9 +576,7 @@ pub fn preview_key(key: &str) -> Result<GpgPrivateKey> {
     }
 
     let output = String::from_utf8(gpg_preview.stdout)?;
-    let key_details = output
-        .parse::<GpgPrivateKey>()
-        .map_err(|_| GpgError::InvalidGpgKeyData(output.trim().to_string()))?;
+    let key_details = output.parse::<GpgPrivateKey>()?;
 
     Ok(key_details)
 }
@@ -464,15 +658,12 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
         }
     }
 
-    if let Some(expiration_date) = key_details.secret_subkey.expiration_date {
-        if expiration_date <= current_timestamp {
-            bail!(
-                "GPG secret subkey has expired on {}",
-                Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
-            );
-        }
-    }
-
+    // Subkey expiry is intentionally not checked here: which subkey (if any)
+    // is actually used for signing isn't known until the caller resolves a
+    // signing key (e.g. via --fingerprint), so an expired, non-selected
+    // subkey must not block an otherwise-usable key. See
+    // GpgImport::configure_git_signing, which validates expiry for the
+    // specific key that was selected.
     Ok(key_details)
 }
 
@@ -649,22 +840,57 @@ Pubkey: RSA, ELG, DSA, ECDH, ECDSA, EDDSA";
     #[test]
     fn display_gpg_private_key_without_expiration() {
         let key = GpgPrivateKey {
-            user_name: "batman".to_string(),
-            user_email: "batman@dc.com".to_string(),
+            uids: vec![GpgUid {
+                name: "batman".to_string(),
+                email: "batman@dc.com".to_string(),
+            }],
             secret_key: GpgKeyDetails {
                 creation_date: 1700000000,
                 expiration_date: None,
                 fingerprint: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
                 key_id: "FDEFE8AB8796E127".to_string(),
                 keygrip: "C4403DA4AF911084480BA46743E707CCDD082A24".to_string(),
+                capabilities: GpgCapabilities {
+                    sign: true,
+                    certify: true,
+                    ..Default::default()
+                },
             },
-            secret_subkey: GpgKeyDetails {
+            subkeys: vec![GpgKeyDetails {
                 creation_date: 1700000000,
                 expiration_date: None,
                 fingerprint: "F36BE03211AF1D3CE26D8B3ABE6663F6A323FBE8".to_string(),
                 key_id: "BE6663F6A323FBE8".to_string(),
                 keygrip: "4AC8E7E7FD8B405DF2761726D296F98C9B778875".to_string(),
+                capabilities: GpgCapabilities {
+                    encrypt: true,
+                    ..Default::default()
+                },
+            }],
+        };
+        insta::assert_snapshot!(key.to_string());
+    }
+
+    #[test]
+    fn display_gpg_private_key_with_name_only_uid() {
+        let key = GpgPrivateKey {
+            uids: vec![GpgUid {
+                name: "batman".to_string(),
+                email: String::new(),
+            }],
+            secret_key: GpgKeyDetails {
+                creation_date: 1700000000,
+                expiration_date: None,
+                fingerprint: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
+                key_id: "FDEFE8AB8796E127".to_string(),
+                keygrip: "C4403DA4AF911084480BA46743E707CCDD082A24".to_string(),
+                capabilities: GpgCapabilities {
+                    sign: true,
+                    certify: true,
+                    ..Default::default()
+                },
             },
+            subkeys: vec![],
         };
         insta::assert_snapshot!(key.to_string());
     }
@@ -708,8 +934,9 @@ grp:::::::::4AC8E7E7FD8B405DF2761726D296F98C9B778875:",
         assert!(result.is_ok(), "Should parse GPG colon format");
 
         let key = result.unwrap();
-        assert_eq!(key.user_name, "batman");
-        assert_eq!(key.user_email, "batman@dc.com");
+        assert_eq!(key.uids.len(), 1);
+        assert_eq!(key.primary_uid().name, "batman");
+        assert_eq!(key.primary_uid().email, "batman@dc.com");
         assert_eq!(key.secret_key.creation_date, now.timestamp());
         assert_eq!(
             key.secret_key.expiration_date,
@@ -724,15 +951,259 @@ grp:::::::::4AC8E7E7FD8B405DF2761726D296F98C9B778875:",
             key.secret_key.keygrip,
             "C4403DA4AF911084480BA46743E707CCDD082A24"
         );
-        assert_eq!(key.secret_subkey.creation_date, now.timestamp());
+        assert!(key.secret_key.capabilities.sign);
+        assert!(key.secret_key.capabilities.certify);
+        assert!(!key.secret_key.capabilities.encrypt);
+
+        assert_eq!(key.subkeys.len(), 1);
+        let subkey = &key.subkeys[0];
+        assert_eq!(subkey.creation_date, now.timestamp());
         assert_eq!(
-            key.secret_subkey.expiration_date,
+            subkey.expiration_date,
             Some(secret_subkey_expiration.timestamp())
         );
-        assert_eq!(key.secret_subkey.key_id, "BE6663F6A323FBE8");
+        assert_eq!(subkey.key_id, "BE6663F6A323FBE8");
+        assert_eq!(subkey.keygrip, "4AC8E7E7FD8B405DF2761726D296F98C9B778875");
+        assert!(subkey.capabilities.encrypt);
+        assert!(!subkey.capabilities.sign);
+    }
+
+    #[test]
+    fn parse_sign_only_key_without_subkey() {
+        let gpg_colon_format = "sec:u:4096:1:CA953C1735BEEB77:1700000000:::u:::scSC:::+:::23::0:
+fpr:::::::::53C53C910B205E504F69EEA3CA953C1735BEEB77:
+grp:::::::::591F029DF76C1A0673B7122D97CF0FA3962561DD:
+uid:u::::1700000000::96652C75728C60697573C3570C362BED95E6544::robin <robin@dc.com>::::::::::0:";
+
+        let result = gpg_colon_format.parse::<GpgPrivateKey>();
+        assert!(result.is_ok(), "Should parse a sign-only key");
+
+        let key = result.unwrap();
+        assert!(key.subkeys.is_empty());
+        assert_eq!(key.primary_uid().name, "robin");
+    }
+
+    #[test]
+    fn parse_multiple_subkeys_with_capabilities() {
+        let gpg_colon_format = "sec:u:2048:1:B8527C5AED483BE3:1700000000:::u:::scESCA:::+:::23::0:
+fpr:::::::::24DA69B1615F5F3C6A9C3A60B8527C5AED483BE3:
+grp:::::::::4D74903B8F3C8B017B3DC9FAA602D29429748FEE:
+uid:u::::1700000000::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::batman <batman@dc.com>::::::::::0:
+ssb:u:2048:1:B5F51E0E91062E1F:1700000000::::::e:::+:::23:
+fpr:::::::::1151789CA9BEAFCB8998FB0CB5F51E0E91062E1F:
+grp:::::::::7C1FAF12BFE4399DF3C64D6C16354057232DD75A:
+ssb:u:2048:1:28BA2DEA0CFC5717:1700000100::::::s:::+:::23:
+fpr:::::::::15404EFABA5A81EDBFA6C6B628BA2DEA0CFC5717:
+grp:::::::::B644058C06C9EDA6E0EFBAAD8C847A86739DE73F:
+ssb:u:2048:1:34E7EF9A6D5E41E6:1700000200::::::a:::+:::23:
+fpr:::::::::AA5C366A86714B60DAD2DEA634E7EF9A6D5E41E6:
+grp:::::::::6CD0471E9E43B60B911B7DA083B836ED51494DB7:";
+
+        let result = gpg_colon_format.parse::<GpgPrivateKey>();
+        assert!(result.is_ok(), "Should parse a key with 3 subkeys");
+
+        let key = result.unwrap();
+        assert_eq!(key.subkeys.len(), 3);
+
+        assert_eq!(key.subkeys[0].key_id, "B5F51E0E91062E1F");
+        assert!(key.subkeys[0].capabilities.encrypt);
+        assert!(!key.subkeys[0].capabilities.sign);
+
+        assert_eq!(key.subkeys[1].key_id, "28BA2DEA0CFC5717");
+        assert!(key.subkeys[1].capabilities.sign);
+        assert!(!key.subkeys[1].capabilities.encrypt);
+
+        assert_eq!(key.subkeys[2].key_id, "34E7EF9A6D5E41E6");
+        assert!(key.subkeys[2].capabilities.authenticate);
+    }
+
+    #[test]
+    fn parse_multiple_uids() {
+        let gpg_colon_format = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
+fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
+grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:
+uid:u::::1700000000::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::batman <batman@dc.com>::::::::::0:
+uid:u::::1700000000::1E9C7598797E7F7A380A72A58B9B7FA28160AB07::bruce wayne <bruce@wayne.com>::::::::::0:";
+
+        let result = gpg_colon_format.parse::<GpgPrivateKey>();
+        assert!(result.is_ok(), "Should parse a key with multiple uids");
+
+        let key = result.unwrap();
+        assert_eq!(key.uids.len(), 2);
+        assert_eq!(key.primary_uid().name, "batman");
+        assert_eq!(key.uids[1].name, "bruce wayne");
+        assert_eq!(key.uids[1].email, "bruce@wayne.com");
+    }
+
+    #[test]
+    fn unescape_colon_field_decodes_hex_escapes() {
+        // Verified against real gpg --with-colons output: a literal `:` is
+        // written as \x3a, a literal `\` as \x5c.
         assert_eq!(
-            key.secret_subkey.keygrip,
-            "4AC8E7E7FD8B405DF2761726D296F98C9B778875"
+            unescape_colon_field("Batman\\x3a Dark Knight"),
+            "Batman: Dark Knight"
+        );
+        assert_eq!(
+            unescape_colon_field("Batman \\x5c Robin"),
+            "Batman \\ Robin"
+        );
+        assert_eq!(unescape_colon_field("Bätman Ünïcode"), "Bätman Ünïcode");
+        assert_eq!(unescape_colon_field("no escapes here"), "no escapes here");
+    }
+
+    #[test]
+    fn unescape_colon_field_ignores_malformed_escape() {
+        assert_eq!(
+            unescape_colon_field("Batman\\xZZ Robin"),
+            "Batman\\xZZ Robin"
+        );
+        assert_eq!(unescape_colon_field("Batman\\x3"), "Batman\\x3");
+    }
+
+    #[test]
+    fn parse_uid_decodes_colon_hex_escape() {
+        let gpg_colon_format = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
+fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
+grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:
+uid:u::::1700000000::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::Batman\\x3a Dark Knight <batman@dc.com>::::::::::0:";
+
+        let result = gpg_colon_format.parse::<GpgPrivateKey>();
+        assert!(
+            result.is_ok(),
+            "Should parse a uid containing a C-quoted colon"
+        );
+
+        let key = result.unwrap();
+        assert_eq!(key.primary_uid().name, "Batman: Dark Knight");
+        assert_eq!(key.primary_uid().email, "batman@dc.com");
+    }
+
+    #[test]
+    fn parse_uid_without_email() {
+        assert_eq!(
+            parse_uid("batman", 0, "uid:...:batman:").unwrap(),
+            GpgUid {
+                name: "batman".to_string(),
+                email: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_uid_with_unterminated_email_fails() {
+        let result = parse_uid("batman <batman@dc.com", 0, "uid:...:batman <batman@dc.com:");
+        assert!(matches!(result, Err(GpgError::MalformedKeyRecord(1, _))));
+    }
+
+    #[test]
+    fn parse_name_only_uid_key() {
+        let gpg_colon_format = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
+fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
+grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:
+uid:u::::1700000000::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::batman::::::::::0:";
+
+        let result = gpg_colon_format.parse::<GpgPrivateKey>();
+        assert!(result.is_ok(), "A name-only uid should not fail parsing");
+
+        let key = result.unwrap();
+        assert_eq!(key.primary_uid().name, "batman");
+        assert_eq!(key.primary_uid().email, "");
+    }
+
+    #[test]
+    fn parse_uid_containing_record_tag_substrings() {
+        let gpg_colon_format = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
+fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
+grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:
+uid:u::::1700000000::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::grossberg fpr sec ssb <grossberg@dc.com>::::::::::0:
+ssb:u:4096:1:BE6663F6A323FBE8:1700000000::::::e:::+:::23:
+fpr:::::::::F36BE03211AF1D3CE26D8B3ABE6663F6A323FBE8:
+grp:::::::::4AC8E7E7FD8B405DF2761726D296F98C9B778875:";
+
+        let result = gpg_colon_format.parse::<GpgPrivateKey>();
+        assert!(
+            result.is_ok(),
+            "A uid containing ssb/sec/fpr substrings should not derail parsing"
+        );
+
+        let key = result.unwrap();
+        assert_eq!(key.primary_uid().name, "grossberg fpr sec ssb");
+        assert_eq!(key.primary_uid().email, "grossberg@dc.com");
+        assert_eq!(key.subkeys.len(), 1);
+        assert_eq!(key.subkeys[0].key_id, "BE6663F6A323FBE8");
+    }
+
+    #[test]
+    fn parse_missing_sec_record_fails() {
+        let result = "uid:u::::1700000000::hash::batman <batman@dc.com>::::::::::0:"
+            .parse::<GpgPrivateKey>();
+
+        assert!(matches!(result, Err(GpgError::InvalidGpgKeyData(_))));
+    }
+
+    #[test]
+    fn parse_missing_uid_record_fails() {
+        let result = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
+fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
+grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:"
+            .parse::<GpgPrivateKey>();
+
+        assert!(matches!(result, Err(GpgError::InvalidGpgKeyData(_))));
+    }
+
+    #[test]
+    fn parse_truncated_record_reports_line_number() {
+        let result = "sec:u:4096:1:FDEFE8AB8796E127:1700000000\nuid:u::::1700000000::hash::batman <batman@dc.com>::::::::::0:"
+            .parse::<GpgPrivateKey>();
+
+        match result {
+            Err(GpgError::MalformedKeyRecord(line_no, _)) => assert_eq!(line_no, 1),
+            other => panic!("expected MalformedKeyRecord on line 1, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_sec_missing_fpr_and_grp_fails() {
+        let result = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
+uid:u::::1700000000::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::batman <batman@dc.com>::::::::::0:"
+            .parse::<GpgPrivateKey>();
+
+        assert!(
+            matches!(result, Err(GpgError::InvalidGpgKeyData(_))),
+            "A sec record with no matching fpr/grp should not yield an empty fingerprint/keygrip: {result:?}"
+        );
+    }
+
+    #[test]
+    fn parse_ssb_missing_fpr_and_grp_fails() {
+        let result = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
+fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
+grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:
+uid:u::::1700000000::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::batman <batman@dc.com>::::::::::0:
+ssb:u:4096:1:BE6663F6A323FBE8:1700000000::::::e:::+:::23:"
+            .parse::<GpgPrivateKey>();
+
+        assert!(
+            matches!(result, Err(GpgError::InvalidGpgKeyData(_))),
+            "An ssb record with no matching fpr/grp should not yield an empty fingerprint/keygrip: {result:?}"
+        );
+    }
+
+    #[test]
+    fn parse_multiple_sec_records_fails() {
+        let result = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
+fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
+grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:
+uid:u::::1700000000::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::batman <batman@dc.com>::::::::::0:
+sec:u:4096:1:AAAAAAAAAAAAAAAA:1700000000:::u:::scESC:::+:::23::0:
+fpr:::::::::1111111111111111111111111111111111111111:
+grp:::::::::2222222222222222222222222222222222222222:
+uid:u::::1700000000::1E9C7598797E7F7A380A72A58B9B7FA28160AB07::robin <robin@dc.com>::::::::::0:"
+            .parse::<GpgPrivateKey>();
+
+        assert!(
+            matches!(result, Err(GpgError::InvalidGpgKeyData(_))),
+            "A second sec record must not silently merge into a hybrid of two keys: {result:?}"
         );
     }
 }

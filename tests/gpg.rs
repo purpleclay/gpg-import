@@ -1,11 +1,10 @@
-use anyhow::{bail, Ok, Result};
 use chrono::{Duration, Utc};
 use gpg_import::gpg;
 use serial_test::serial;
-use std::{env, fs, process::Command};
-use tempfile::TempDir;
+use std::env;
 
-static GNUPGHOME: &str = "GNUPGHOME";
+mod fixture;
+use fixture::GpgTestFixture;
 
 #[derive(Default)]
 struct GpgBatchConfig {
@@ -46,156 +45,6 @@ Name-Email: batman@dc.com"
         batch_content.push_str("\n%no-protection");
         batch_content.push_str("\n%commit\n");
         batch_content
-    }
-}
-
-/// A test fixture that creates an isolated GPG home directory
-/// and cleans it up automatically when dropped
-struct GpgTestFixture {
-    temp_dir: TempDir,
-    original_gnupghome: Option<String>,
-}
-
-impl GpgTestFixture {
-    fn new() -> Result<Self> {
-        if !Self::is_gpg_available() {
-            bail!("GPG is required for tests. Please install GPG to run tests.")
-        }
-
-        let temp_dir = TempDir::new()?;
-        let gnupg_home = temp_dir.path().to_string_lossy().to_string();
-
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(temp_dir.path())?.permissions();
-        perms.set_mode(0o700);
-        fs::set_permissions(temp_dir.path(), perms)?;
-
-        // Save original GNUPGHOME, allowing it to be restored later
-        let original_gnupghome = env::var(GNUPGHOME).ok();
-        env::set_var(GNUPGHOME, &gnupg_home);
-
-        gpg::configure_defaults(&gnupg_home)?;
-        gpg::configure_agent_defaults(&gnupg_home)?;
-
-        Ok(Self {
-            temp_dir,
-            original_gnupghome,
-        })
-    }
-
-    fn is_gpg_available() -> bool {
-        Command::new("gpg")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-    }
-
-    #[cfg(unix)]
-    fn batch_generate_key_on(&self, batch_config: &str, yyyy_mm_dd: &str) -> Result<String> {
-        self.generate_key(batch_config, Some(yyyy_mm_dd))
-    }
-
-    fn generate_key(&self, batch_config: &str, created_date: Option<&str>) -> Result<String> {
-        let batch_file_path = self.temp_dir.path().join("batch_config.txt");
-        fs::write(&batch_file_path, batch_config)?;
-
-        let output = if let Some(date) = created_date {
-            Command::new("faketime")
-                .arg(date)
-                .arg("gpg")
-                .arg("--batch")
-                .arg("--generate-key")
-                .arg(&batch_file_path)
-                .output()?
-        } else {
-            Command::new("gpg")
-                .arg("--batch")
-                .arg("--generate-key")
-                .arg(&batch_file_path)
-                .output()?
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            println!("Failed to generate GPG key: {}", stderr);
-            bail!("Failed to generate GPG key: {}", stderr);
-        }
-
-        // Get the fingerprint of the generated key
-        self.get_latest_key_fingerprint()
-    }
-
-    /// Get the fingerprint of the most recently generated key
-    fn get_latest_key_fingerprint(&self) -> Result<String> {
-        let output = Command::new("gpg")
-            .arg("--list-secret-keys")
-            .arg("--with-colons")
-            .arg("--fingerprint")
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("Failed to list GPG keys: {}", stderr);
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        for line in stdout.lines() {
-            if line.starts_with("fpr:") {
-                let parts: Vec<&str> = line.split(':').collect();
-                if parts.len() > 9 && !parts[9].is_empty() {
-                    return Ok(parts[9].to_string());
-                }
-            }
-        }
-
-        bail!("Could not find fingerprint in GPG output")
-    }
-
-    fn create_and_sign_file(&self, fingerprint: &str) -> Result<()> {
-        let content = "Lorem ipsum dolor sit amet consectetur adipiscing elit. \
-                       Quisque faucibus ex sapien vitae pellentesque sem placerat. \
-                       In id cursus mi pretium tellus duis convallis. \
-                       Tempus leo eu aenean sed diam urna tempor. \
-                       Pulvinar vivamus fringilla lacus nec metus bibendum egestas. \
-                       Iaculis massa nisl malesuada lacinia integer nunc posuere. \
-                       Ut hendrerit semper vel class aptent taciti sociosqu. \
-                       Ad litora torquent per conubia nostra inceptos himenaeos.";
-
-        let file_path = self.temp_dir.path().join("test_file.txt");
-        fs::write(&file_path, content)?;
-
-        let signature_path = file_path.with_extension("sig");
-        let output = Command::new("gpg")
-            .arg("--batch")
-            .arg("--yes")
-            .arg("--local-user")
-            .arg(fingerprint)
-            .arg("--detach-sign")
-            .arg("--output")
-            .arg(&signature_path)
-            .arg(&file_path)
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("Failed to sign file: {}", stderr);
-        }
-
-        if !signature_path.exists() {
-            bail!("Signature file was not created");
-        }
-
-        Ok(())
-    }
-}
-
-impl Drop for GpgTestFixture {
-    fn drop(&mut self) {
-        match &self.original_gnupghome {
-            Some(original) => env::set_var(GNUPGHOME, original),
-            _ => env::remove_var(GNUPGHOME),
-        }
     }
 }
 
@@ -336,7 +185,13 @@ fn extract_key_info_expired_secret_key() {
 
 #[test]
 #[serial]
-fn extract_key_info_expired_secret_subkey() {
+fn extract_key_info_does_not_reject_expired_subkey() {
+    // extract_key_info doesn't know which key (if any) will be selected for
+    // signing, so it intentionally leaves subkey-expiry enforcement to
+    // GpgImport::configure_git_signing, which validates expiry for the
+    // specific key actually resolved for signing. See
+    // configure_git_signing_rejects_expired_selected_subkey and
+    // configure_git_signing_ignores_expired_unselected_subkey in import.rs.
     let fixture = GpgTestFixture::new();
     assert!(fixture.is_ok(), "Failed to create GPG test fixture");
 
@@ -356,16 +211,260 @@ fn extract_key_info_expired_secret_subkey() {
 
     let result = gpg::extract_key_info(&result.unwrap());
     assert!(
-        result.is_err(),
-        "Failed to extract key info for expired secret subkey"
+        result.is_ok(),
+        "extract_key_info should not fail on an expired subkey: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+#[serial]
+fn extract_key_info_sign_only_no_subkey() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let fixture = fixture.unwrap();
+
+    let batch_config = "Key-Type: RSA
+Key-Length: 2048
+Key-Usage: sign
+Name-Real: robin
+Name-Email: robin@dc.com
+%no-protection
+%commit
+";
+
+    let fingerprint = fixture.generate_key(batch_config, None);
+    assert!(fingerprint.is_ok(), "Failed to generate sign-only GPG key");
+    let fingerprint = fingerprint.unwrap();
+
+    let key_info = gpg::extract_key_info(&fingerprint);
+    assert!(
+        key_info.is_ok(),
+        "Should extract info for a sign-only key with no subkey"
     );
 
-    let error = result.unwrap_err();
-    let error_message = format!("{}", error);
+    let key_info = key_info.unwrap();
     assert!(
-        error_message.contains("GPG secret subkey has expired on"),
-        "Expected error message does not match"
+        key_info.subkeys.is_empty(),
+        "Sign-only key should have no subkeys"
     );
+    assert_eq!(key_info.primary_uid().name, "robin");
+
+    let sign_result = fixture.create_and_sign_file(&key_info.secret_key.fingerprint);
+    assert!(
+        sign_result.is_ok(),
+        "Sign-only key should still be able to sign"
+    );
+}
+
+#[test]
+#[serial]
+fn extract_key_info_multiple_subkeys() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let fixture = fixture.unwrap();
+
+    let batch_config = "Key-Type: RSA
+Key-Length: 2048
+Key-Usage: sign
+Name-Real: batman
+Name-Email: batman@dc.com
+%no-protection
+%commit
+";
+
+    let fingerprint = fixture.generate_key(batch_config, None);
+    assert!(fingerprint.is_ok(), "Failed to generate primary key");
+    let fingerprint = fingerprint.unwrap();
+
+    // The signing-capable subkey is deliberately added after an encryption
+    // subkey, mirroring key rotation where the original encrypt subkey
+    // precedes a later-added signing subkey.
+    assert!(
+        fixture.add_subkey(&fingerprint, "encrypt").is_ok(),
+        "Failed to add encrypt subkey"
+    );
+    assert!(
+        fixture.add_subkey(&fingerprint, "sign").is_ok(),
+        "Failed to add sign subkey"
+    );
+    assert!(
+        fixture.add_subkey(&fingerprint, "auth").is_ok(),
+        "Failed to add auth subkey"
+    );
+
+    let key_info = gpg::extract_key_info(&fingerprint);
+    assert!(
+        key_info.is_ok(),
+        "Should extract info for a key with 3 subkeys"
+    );
+
+    let key_info = key_info.unwrap();
+    assert_eq!(key_info.subkeys.len(), 3, "Should parse all 3 subkeys");
+    assert!(key_info.subkeys[0].capabilities.encrypt);
+    assert!(key_info.subkeys[1].capabilities.sign);
+    assert!(key_info.subkeys[2].capabilities.authenticate);
+
+    let signing_subkey = key_info.subkeys.iter().find(|k| k.capabilities.sign);
+    assert!(
+        signing_subkey.is_some_and(|k| !k.fingerprint.is_empty() && !k.keygrip.is_empty()),
+        "The non-first signing-capable subkey should have a fingerprint and keygrip"
+    );
+}
+
+#[test]
+#[serial]
+fn preset_passphrase_for_every_subkey_allows_non_first_subkey_to_sign() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let fixture = fixture.unwrap();
+
+    let passphrase = "gotham";
+    let batch_config = format!(
+        "Key-Type: RSA
+Key-Length: 2048
+Key-Usage: sign
+Name-Real: batman
+Name-Email: batman@dc.com
+Passphrase: {passphrase}
+%commit
+"
+    );
+
+    let fingerprint = fixture.generate_key(&batch_config, None);
+    assert!(fingerprint.is_ok(), "Failed to generate primary key");
+    let fingerprint = fingerprint.unwrap();
+
+    // Signing-capable subkey deliberately not first, mirroring the scenario
+    // where configure_gpg_passphrase previously only preset subkeys.first().
+    assert!(
+        fixture
+            .add_protected_subkey(&fingerprint, "encrypt", passphrase)
+            .is_ok(),
+        "Failed to add encrypt subkey"
+    );
+    assert!(
+        fixture
+            .add_protected_subkey(&fingerprint, "sign", passphrase)
+            .is_ok(),
+        "Failed to add sign subkey"
+    );
+
+    let key_info = gpg::extract_key_info(&fingerprint);
+    assert!(key_info.is_ok(), "Failed to extract key info");
+    let key_info = key_info.unwrap();
+    assert_eq!(key_info.subkeys.len(), 2);
+
+    // add_protected_subkey authenticated with the real passphrase above; kill
+    // the agent so any residual cache from that setup can't make the signing
+    // assertion below pass regardless of whether the preset loop works.
+    assert!(fixture.kill_agent().is_ok(), "Failed to kill gpg-agent");
+
+    // Mirrors GpgImport::configure_gpg_passphrase: preset primary + every subkey.
+    assert!(gpg::preset_passphrase(&key_info.secret_key.keygrip, passphrase).is_ok());
+    for subkey in &key_info.subkeys {
+        assert!(
+            gpg::preset_passphrase(&subkey.keygrip, passphrase).is_ok(),
+            "Failed to preset passphrase for subkey {}",
+            subkey.key_id
+        );
+    }
+
+    // The non-first (sign) subkey must be able to sign without prompting,
+    // since its passphrase was preset above.
+    let signing_subkey = &key_info.subkeys[1];
+    assert!(signing_subkey.capabilities.sign);
+    let sign_result = fixture.create_and_sign_file(&signing_subkey.fingerprint);
+    assert!(
+        sign_result.is_ok(),
+        "Non-first subkey should sign without a passphrase prompt: {:?}",
+        sign_result.err()
+    );
+}
+
+#[test]
+#[serial]
+fn preview_key_sign_only_no_subkey() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let fixture = fixture.unwrap();
+
+    let batch_config = "Key-Type: RSA
+Key-Length: 2048
+Key-Usage: sign
+Name-Real: robin
+Name-Email: robin@dc.com
+%no-protection
+%commit
+";
+
+    let fingerprint = fixture.generate_key(batch_config, None);
+    assert!(fingerprint.is_ok(), "Failed to generate sign-only GPG key");
+    let fingerprint = fingerprint.unwrap();
+
+    let armored = fixture.export_secret_key(&fingerprint);
+    assert!(armored.is_ok(), "Failed to export sign-only GPG key");
+
+    // preview_key uses a different gpg invocation (`--import-options show-only`,
+    // without --fixed-list-mode) to extract_key_info's (`--list-secret-keys`),
+    // so the zero-subkey case is verified independently here.
+    let result = gpg::preview_key(&armored.unwrap());
+    assert!(result.is_ok(), "Should preview a sign-only key");
+
+    let key = result.unwrap();
+    assert!(
+        key.subkeys.is_empty(),
+        "Sign-only key should have no subkeys"
+    );
+    assert_eq!(key.primary_uid().name, "robin");
+}
+
+#[test]
+#[serial]
+fn preview_key_multiple_subkeys() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let fixture = fixture.unwrap();
+
+    let batch_config = "Key-Type: RSA
+Key-Length: 2048
+Key-Usage: sign
+Name-Real: batman
+Name-Email: batman@dc.com
+%no-protection
+%commit
+";
+
+    let fingerprint = fixture.generate_key(batch_config, None);
+    assert!(fingerprint.is_ok(), "Failed to generate primary key");
+    let fingerprint = fingerprint.unwrap();
+
+    // Same encrypt-then-sign-then-auth ordering as extract_key_info_multiple_subkeys,
+    // exercised here through preview_key's separate gpg invocation.
+    assert!(
+        fixture.add_subkey(&fingerprint, "encrypt").is_ok(),
+        "Failed to add encrypt subkey"
+    );
+    assert!(
+        fixture.add_subkey(&fingerprint, "sign").is_ok(),
+        "Failed to add sign subkey"
+    );
+    assert!(
+        fixture.add_subkey(&fingerprint, "auth").is_ok(),
+        "Failed to add auth subkey"
+    );
+
+    let armored = fixture.export_secret_key(&fingerprint);
+    assert!(armored.is_ok(), "Failed to export multi-subkey GPG key");
+
+    let result = gpg::preview_key(&armored.unwrap());
+    assert!(result.is_ok(), "Should preview a key with 3 subkeys");
+
+    let key = result.unwrap();
+    assert_eq!(key.subkeys.len(), 3, "Should parse all 3 subkeys");
+    assert!(key.subkeys[0].capabilities.encrypt);
+    assert!(key.subkeys[1].capabilities.sign);
+    assert!(key.subkeys[2].capabilities.authenticate);
 }
 
 #[test]
@@ -396,13 +495,14 @@ fn preview_key_base64() {
     assert!(result.is_ok(), "Should preview GPG key");
 
     let key = result.unwrap();
-    assert_eq!(key.user_name, "batman");
-    assert_eq!(key.user_email, "batman@dc.com");
+    assert_eq!(key.primary_uid().name, "batman");
+    assert_eq!(key.primary_uid().email, "batman@dc.com");
     assert!(!key.secret_key.fingerprint.is_empty());
     assert!(!key.secret_key.key_id.is_empty());
     assert!(!key.secret_key.keygrip.is_empty());
-    assert!(!key.secret_subkey.key_id.is_empty());
-    assert!(!key.secret_subkey.keygrip.is_empty());
+    assert_eq!(key.subkeys.len(), 1);
+    assert!(!key.subkeys[0].key_id.is_empty());
+    assert!(!key.subkeys[0].keygrip.is_empty());
 }
 
 #[test]
@@ -495,13 +595,14 @@ fn preview_key_ascii_armored() {
     assert!(result.is_ok(), "Should preview ASCII armored GPG key");
 
     let key = result.unwrap();
-    assert_eq!(key.user_name, "batman");
-    assert_eq!(key.user_email, "batman@dc.com");
+    assert_eq!(key.primary_uid().name, "batman");
+    assert_eq!(key.primary_uid().email, "batman@dc.com");
     assert!(!key.secret_key.fingerprint.is_empty());
     assert!(!key.secret_key.key_id.is_empty());
     assert!(!key.secret_key.keygrip.is_empty());
-    assert!(!key.secret_subkey.key_id.is_empty());
-    assert!(!key.secret_subkey.keygrip.is_empty());
+    assert_eq!(key.subkeys.len(), 1);
+    assert!(!key.subkeys[0].key_id.is_empty());
+    assert!(!key.subkeys[0].keygrip.is_empty());
 }
 
 #[test]

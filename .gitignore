@@ -1,34 +1,26 @@
 # Ignore everything and selectively allow files
 *
 
-# Allow project files
-!.deepsource.toml
-!.dockerignore
+!/.envrc
 !.github/**/*
-!.gitignore
+!/.gitignore
 !.zed/settings.json
-!CODEOWNERS
-!CODE_OF_CONDUCT.md
-!Dockerfile*
-!LICENSE
-!README.md
+!/build.rs
+!/Cargo.lock
+!/Cargo.toml
+!/CODEOWNERS
+!/CODE_OF_CONDUCT.md
+!/default.nix
+!/flake.lock
+!/flake.nix
+!/LICENSE
+!/README.md
 !scripts/*
-!typos.toml
-
-# Allow Nix files
-!.envrc
-!flake.nix
-!flake.lock
-!default.nix
-
-# Allow Rust files
-!Cargo.toml
-!Cargo.lock
 !src/*.rs
 !src/snapshots/*
-!tests/*.rs
+!tests/**/*.rs
 !tests/testdata/*
-!build.rs
+!/typos.toml
 target/**/*
 
 # Recurse through sub-directories applying the same patterns

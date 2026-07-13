@@ -1,5 +1,6 @@
 use crate::{git, gpg};
 use anyhow::{bail, Result};
+use chrono::{TimeZone, Utc};
 use git2::Repository;
 
 /// A builder for importing GPG keys with optional configuration.
@@ -125,7 +126,9 @@ impl GpgImport {
 
         if !self.dry_run {
             gpg::preset_passphrase(&private_key.secret_key.keygrip, passphrase_cleaned)?;
-            gpg::preset_passphrase(&private_key.secret_subkey.keygrip, passphrase_cleaned)?;
+            for subkey in &private_key.subkeys {
+                gpg::preset_passphrase(&subkey.keygrip, passphrase_cleaned)?;
+            }
         }
 
         println!("> Setting Passphrase:");
@@ -133,10 +136,9 @@ impl GpgImport {
             "keygrip: {} [{}]",
             private_key.secret_key.keygrip, private_key.secret_key.key_id
         );
-        println!(
-            "keygrip: {} [{}]",
-            private_key.secret_subkey.keygrip, private_key.secret_subkey.key_id
-        );
+        for subkey in &private_key.subkeys {
+            println!("keygrip: {} [{}]", subkey.keygrip, subkey.key_id);
+        }
 
         Ok(())
     }
@@ -170,15 +172,22 @@ impl GpgImport {
         }
 
         let signing_key = self.resolve_signing_key(private_key)?;
+        validate_signing_key_expiry(private_key, &signing_key)?;
+        let primary_uid = private_key.primary_uid();
+        let user_email = self
+            .git_committer_email
+            .clone()
+            .unwrap_or_else(|| primary_uid.email.clone());
+        if user_email.trim().is_empty() {
+            bail!("primary GPG UID has no email; provide a Git committer email override");
+        }
+
         let git_cfg = git::SigningConfig {
             user_name: self
                 .git_committer_name
                 .clone()
-                .unwrap_or_else(|| private_key.user_name.clone()),
-            user_email: self
-                .git_committer_email
-                .clone()
-                .unwrap_or_else(|| private_key.user_email.clone()),
+                .unwrap_or_else(|| primary_uid.name.clone()),
+            user_email,
             key_id: signing_key,
             commit_sign: true,
             tag_sign: true,
@@ -194,9 +203,12 @@ impl GpgImport {
     fn resolve_signing_key(&self, private_key: &gpg::GpgPrivateKey) -> Result<String> {
         match &self.fingerprint {
             Some(fp) => {
-                if fp != &private_key.secret_key.fingerprint
-                    && fp != &private_key.secret_subkey.fingerprint
-                {
+                let matches_subkey = private_key
+                    .subkeys
+                    .iter()
+                    .any(|subkey| fp == &subkey.fingerprint);
+
+                if fp != &private_key.secret_key.fingerprint && !matches_subkey {
                     bail!(gpg::GpgError::FingerprintNotFound(fp.clone()));
                 }
                 Ok(fp.clone())
@@ -219,5 +231,283 @@ impl GpgImport {
         }
 
         Ok(())
+    }
+}
+
+/// Validates that the key actually selected for signing (as resolved by
+/// `resolve_signing_key`) isn't expired. `signing_key` is either a subkey's
+/// fingerprint (explicit `--fingerprint` selecting a subkey), the primary
+/// key's fingerprint, or the primary key's key id (default, no
+/// `--fingerprint`) -- only the first case names a subkey, so this only has
+/// something to check when `signing_key` matches one. The primary key's own
+/// expiry is already checked unconditionally by `gpg::extract_key_info`.
+fn validate_signing_key_expiry(private_key: &gpg::GpgPrivateKey, signing_key: &str) -> Result<()> {
+    let Some(subkey) = private_key
+        .subkeys
+        .iter()
+        .find(|subkey| subkey.fingerprint == signing_key)
+    else {
+        return Ok(());
+    };
+
+    if let Some(expiration_date) = subkey.expiration_date {
+        if expiration_date <= Utc::now().timestamp() {
+            bail!(
+                "the selected signing subkey has expired on {}",
+                Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpg::{GpgCapabilities, GpgKeyDetails, GpgPrivateKey, GpgUid};
+    use serial_test::serial;
+    use std::{env, path::Path};
+    use tempfile::TempDir;
+
+    /// Temporarily changes the process's current directory, restoring it
+    /// when dropped. `git::is_repo` resolves the repo via
+    /// `Repository::open(".")`, so tests exercising git configuration need
+    /// to point the process at a throwaway repo instead of this project's
+    /// own checkout.
+    struct CwdGuard {
+        original: std::path::PathBuf,
+    }
+
+    impl CwdGuard {
+        fn change_to(path: &Path) -> std::io::Result<Self> {
+            let original = env::current_dir()?;
+            env::set_current_dir(path)?;
+            Ok(Self { original })
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = env::set_current_dir(&self.original);
+        }
+    }
+
+    fn key_with_uid_email(email: &str) -> GpgPrivateKey {
+        GpgPrivateKey {
+            uids: vec![GpgUid {
+                name: "batman".to_string(),
+                email: email.to_string(),
+            }],
+            secret_key: GpgKeyDetails {
+                creation_date: 0,
+                expiration_date: None,
+                fingerprint: "PRIMARYFPR".to_string(),
+                key_id: "PRIMARYKEYID".to_string(),
+                keygrip: "PRIMARYGRIP".to_string(),
+                capabilities: GpgCapabilities {
+                    sign: true,
+                    certify: true,
+                    ..Default::default()
+                },
+            },
+            subkeys: vec![],
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn configure_git_signing_bails_when_primary_uid_has_no_email() {
+        let repo_dir = TempDir::new().unwrap();
+        Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+        let _cwd_guard =
+            CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
+
+        let key = key_with_uid_email("");
+        let import = GpgImport::new("irrelevant".to_string());
+
+        let result = import.configure_git_signing(&key);
+        assert!(
+            result.is_err(),
+            "Should bail when the primary uid has no email and no override is given"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn configure_git_signing_accepts_committer_email_override_for_name_only_uid() {
+        let repo_dir = TempDir::new().unwrap();
+        Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+        let _cwd_guard =
+            CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
+
+        let key = key_with_uid_email("");
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_git_committer_email(Some("batman@dc.com".to_string()));
+
+        let result = import.configure_git_signing(&key);
+        assert!(
+            result.is_ok(),
+            "A committer email override should satisfy the check: {:?}",
+            result.err()
+        );
+
+        let repo = Repository::open(repo_dir.path()).expect("Failed to reopen throwaway repo");
+        let config = repo.config().expect("Failed to read throwaway repo config");
+        assert_eq!(config.get_string("user.email").unwrap(), "batman@dc.com");
+    }
+
+    fn key_with_expiring_subkeys(subkeys: &[(&str, Option<i64>)]) -> GpgPrivateKey {
+        GpgPrivateKey {
+            uids: vec![GpgUid {
+                name: "batman".to_string(),
+                email: "batman@dc.com".to_string(),
+            }],
+            secret_key: GpgKeyDetails {
+                creation_date: 0,
+                expiration_date: None,
+                fingerprint: "PRIMARYFPR".to_string(),
+                key_id: "PRIMARYKEYID".to_string(),
+                keygrip: "PRIMARYGRIP".to_string(),
+                capabilities: GpgCapabilities {
+                    sign: true,
+                    certify: true,
+                    ..Default::default()
+                },
+            },
+            subkeys: subkeys
+                .iter()
+                .enumerate()
+                .map(|(i, (fp, expiration_date))| GpgKeyDetails {
+                    creation_date: 0,
+                    expiration_date: *expiration_date,
+                    fingerprint: fp.to_string(),
+                    key_id: format!("SUBKEYID{i}"),
+                    keygrip: format!("SUBKEYGRIP{i}"),
+                    capabilities: GpgCapabilities {
+                        sign: true,
+                        ..Default::default()
+                    },
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn configure_git_signing_rejects_expired_selected_subkey() {
+        let repo_dir = TempDir::new().unwrap();
+        Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+        let _cwd_guard =
+            CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
+
+        let expired = Utc::now().timestamp() - 86_400;
+        let key = key_with_expiring_subkeys(&[
+            ("FIRSTSUBKEYFPR", None),
+            ("SECONDSUBKEYFPR", Some(expired)),
+        ]);
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_fingerprint(Some("SECONDSUBKEYFPR".to_string()));
+
+        let result = import.configure_git_signing(&key);
+        assert!(
+            result.is_err(),
+            "Should reject an expired subkey that was explicitly selected"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn configure_git_signing_ignores_expired_unselected_subkey() {
+        let repo_dir = TempDir::new().unwrap();
+        Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+        let _cwd_guard =
+            CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
+
+        let expired = Utc::now().timestamp() - 86_400;
+        // subkeys[0] is expired but not selected; a different, valid subkey is.
+        let key = key_with_expiring_subkeys(&[
+            ("FIRSTSUBKEYFPR", Some(expired)),
+            ("SECONDSUBKEYFPR", None),
+        ]);
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_fingerprint(Some("SECONDSUBKEYFPR".to_string()));
+
+        let result = import.configure_git_signing(&key);
+        assert!(
+            result.is_ok(),
+            "An expired, unselected subkey must not block a different, valid selected subkey: {:?}",
+            result.err()
+        );
+    }
+
+    fn key_with_subkeys(subkey_fingerprints: &[&str]) -> GpgPrivateKey {
+        GpgPrivateKey {
+            uids: vec![GpgUid {
+                name: "batman".to_string(),
+                email: "batman@dc.com".to_string(),
+            }],
+            secret_key: GpgKeyDetails {
+                creation_date: 0,
+                expiration_date: None,
+                fingerprint: "PRIMARYFPR".to_string(),
+                key_id: "PRIMARYKEYID".to_string(),
+                keygrip: "PRIMARYGRIP".to_string(),
+                capabilities: GpgCapabilities {
+                    sign: true,
+                    certify: true,
+                    ..Default::default()
+                },
+            },
+            subkeys: subkey_fingerprints
+                .iter()
+                .enumerate()
+                .map(|(i, fp)| GpgKeyDetails {
+                    creation_date: 0,
+                    expiration_date: None,
+                    fingerprint: fp.to_string(),
+                    key_id: format!("SUBKEYID{i}"),
+                    keygrip: format!("SUBKEYGRIP{i}"),
+                    capabilities: GpgCapabilities {
+                        sign: true,
+                        ..Default::default()
+                    },
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn resolve_signing_key_accepts_non_first_subkey_fingerprint() {
+        let key = key_with_subkeys(&["FIRSTSUBKEYFPR", "SECONDSUBKEYFPR", "THIRDSUBKEYFPR"]);
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_fingerprint(Some("THIRDSUBKEYFPR".to_string()));
+
+        let result = import.resolve_signing_key(&key);
+        assert!(
+            result.is_ok(),
+            "A --fingerprint matching a non-first subkey should resolve, not error: {:?}",
+            result.err()
+        );
+        assert_eq!(result.unwrap(), "THIRDSUBKEYFPR");
+    }
+
+    #[test]
+    fn resolve_signing_key_rejects_unknown_fingerprint() {
+        let key = key_with_subkeys(&["FIRSTSUBKEYFPR"]);
+        let import =
+            GpgImport::new("irrelevant".to_string()).with_fingerprint(Some("NOPE".to_string()));
+
+        let result = import.resolve_signing_key(&key);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_signing_key_defaults_to_primary_key_id() {
+        let key = key_with_subkeys(&["FIRSTSUBKEYFPR"]);
+        let import = GpgImport::new("irrelevant".to_string());
+
+        let result = import.resolve_signing_key(&key);
+        assert_eq!(result.unwrap(), "PRIMARYKEYID");
     }
 }
