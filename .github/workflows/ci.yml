@@ -29,10 +29,10 @@ jobs:
     name: rustfmt / stable
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Nix
-        uses: cachix/install-nix-action@a49548c11d9846ad46ecc0115273879b045f001c # v31
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -52,10 +52,10 @@ jobs:
     name: clippy / stable
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Nix
-        uses: cachix/install-nix-action@a49548c11d9846ad46ecc0115273879b045f001c # v31
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -81,7 +81,7 @@ jobs:
     name: build-fast / linux_x86_64_musl
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
@@ -110,10 +110,10 @@ jobs:
         os: [ubuntu-24.04, macos-15]
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Nix
-        uses: cachix/install-nix-action@a49548c11d9846ad46ecc0115273879b045f001c # v31
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -158,7 +158,7 @@ jobs:
             use-zigbuild: false
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
