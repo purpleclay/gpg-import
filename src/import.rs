@@ -1,5 +1,5 @@
 use crate::{git, gpg};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use chrono::{TimeZone, Utc};
 use git2::Repository;
 
@@ -250,13 +250,13 @@ fn validate_signing_key_expiry(private_key: &gpg::GpgPrivateKey, signing_key: &s
         return Ok(());
     };
 
-    if let Some(expiration_date) = subkey.expiration_date {
-        if expiration_date <= Utc::now().timestamp() {
-            bail!(
-                "the selected signing subkey has expired on {}",
-                Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
-            );
-        }
+    if let Some(expiration_date) = subkey.expiration_date
+        && expiration_date <= Utc::now().timestamp()
+    {
+        bail!(
+            "the selected signing subkey has expired on {}",
+            Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
+        );
     }
 
     Ok(())

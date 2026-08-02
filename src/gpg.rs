@@ -1,13 +1,13 @@
-use anyhow::{bail, Result};
-use base64::{engine::general_purpose, DecodeError, Engine as _};
+use anyhow::{Result, bail};
+use base64::{DecodeError, Engine as _, engine::general_purpose};
 use chrono::{TimeZone, Utc};
 use nom::{
+    AsChar, Finish, IResult, Parser,
     branch::alt,
     bytes::complete::{tag, take_until},
     character::complete::not_line_ending,
     error::Error,
     sequence::separated_pair,
-    AsChar, Finish, IResult, Parser,
 };
 use std::{
     fmt::{self, Display},
@@ -649,13 +649,13 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
     let key_details = output.parse::<GpgPrivateKey>()?;
 
     let current_timestamp = Utc::now().timestamp();
-    if let Some(expiration_date) = key_details.secret_key.expiration_date {
-        if expiration_date <= current_timestamp {
-            bail!(
-                "GPG secret key has expired on {}",
-                Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
-            );
-        }
+    if let Some(expiration_date) = key_details.secret_key.expiration_date
+        && expiration_date <= current_timestamp
+    {
+        bail!(
+            "GPG secret key has expired on {}",
+            Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
+        );
     }
 
     // Subkey expiry is intentionally not checked here: which subkey (if any)
@@ -683,7 +683,7 @@ pub fn preset_passphrase(keygrip: &str, passphrase: &str) -> Result<()> {
             format!(
                 "PRESET_PASSPHRASE {} -1 {}",
                 keygrip,
-                &hex::encode(passphrase).to_uppercase()
+                hex::encode(passphrase).to_uppercase()
             )
             .as_bytes(),
         )?;

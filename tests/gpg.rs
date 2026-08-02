@@ -76,7 +76,8 @@ impl LocaleGuard {
             .iter()
             .map(|(name, value)| {
                 let original = env::var(name).ok();
-                env::set_var(name, value);
+                // FIXME: Audit that the environment access only happens in single-threaded code.
+                unsafe { env::set_var(name, value) };
                 (*name, original)
             })
             .collect();
@@ -89,8 +90,10 @@ impl Drop for LocaleGuard {
     fn drop(&mut self) {
         for (name, original) in &self.originals {
             match original {
-                Some(value) => env::set_var(name, value),
-                None => env::remove_var(name),
+                // FIXME: Audit that the environment access only happens in single-threaded code.
+                Some(value) => unsafe { env::set_var(name, value) },
+                // FIXME: Audit that the environment access only happens in single-threaded code.
+                None => unsafe { env::remove_var(name) },
             }
         }
     }
@@ -539,7 +542,7 @@ fn import_secret_key_valid_base64_invalid_gpg_data() {
     assert!(fixture.is_ok(), "Failed to create GPG test fixture");
     let _fixture = fixture.unwrap();
 
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     let invalid_gpg_data = general_purpose::STANDARD.encode("not a gpg key");
 
     let result = gpg::import_secret_key(&invalid_gpg_data);

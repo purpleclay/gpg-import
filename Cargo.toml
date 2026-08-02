@@ -2,8 +2,9 @@
 authors = ["Purple Clay <purpleclaygh@gmail.com>"]
 description = "Import and configure GPG signing for git"
 name = "gpg-import"
-edition = "2021"
+edition = "2024"
 license = "MIT"
+rust-version = "1.97.1"
 version = "0.9.1"
 
 [profile.release]
@@ -11,7 +12,7 @@ strip = "debuginfo"
 
 [dependencies]
 anyhow = "1.0.86"
-base64 = "0.22.0"
+base64 = "0.23.0"
 chrono = { version = "0.4.31", default-features = false, features = [
     "std",
     "clock",
@@ -25,7 +26,7 @@ thiserror = "2.0.0"
 
 [dev-dependencies]
 insta = "1.42"
-serial_test = "3.0"
+serial_test = "4.0"
 
 [build-dependencies]
 built = { version = "0.8.0", features = ["git2", "semver", "chrono"] }

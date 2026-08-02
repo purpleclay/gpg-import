@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{command, Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use gpg_import::import::GpgImport;
 use std::io::Read;
 use std::println;
@@ -119,7 +119,11 @@ fn main() -> Result<()> {
         }
     }
 
-    let key_input = args.key.ok_or_else(|| anyhow::anyhow!("Key is required for GPG import. Use --key or set GPG_PRIVATE_KEY environment variable."))?;
+    let key_input = args.key.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Key is required for GPG import. Use --key or set GPG_PRIVATE_KEY environment variable."
+        )
+    })?;
     let key = resolve_key_input(&key_input)?;
 
     GpgImport::new(key)

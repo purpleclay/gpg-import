@@ -3,7 +3,7 @@
 //! than have every binary warn about the helpers it doesn't call.
 #![allow(dead_code)]
 
-use anyhow::{bail, Ok, Result};
+use anyhow::{Ok, Result, bail};
 use gpg_import::gpg;
 use std::{env, fs, process::Command};
 use tempfile::TempDir;
@@ -38,7 +38,8 @@ struct GnupghomeGuard {
 impl GnupghomeGuard {
     fn install(new_value: &str) -> Self {
         let original = env::var(GNUPGHOME).ok();
-        env::set_var(GNUPGHOME, new_value);
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { env::set_var(GNUPGHOME, new_value) };
         Self { original }
     }
 }
@@ -46,8 +47,10 @@ impl GnupghomeGuard {
 impl Drop for GnupghomeGuard {
     fn drop(&mut self) {
         match &self.original {
-            Some(original) => env::set_var(GNUPGHOME, original),
-            None => env::remove_var(GNUPGHOME),
+            // FIXME: Audit that the environment access only happens in single-threaded code.
+            Some(original) => unsafe { env::set_var(GNUPGHOME, original) },
+            // FIXME: Audit that the environment access only happens in single-threaded code.
+            None => unsafe { env::remove_var(GNUPGHOME) },
         }
     }
 }

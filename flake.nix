@@ -35,7 +35,7 @@
 
         inherit (nixpkgs) lib;
 
-        rustToolchain = pkgs.rust-bin.stable."1.87.0".default.override {
+        rustToolchain = pkgs.rust-bin.stable."1.97.1".default.override {
           extensions = ["rust-src" "cargo" "rustc" "clippy" "rustfmt"];
         };
 
@@ -48,10 +48,11 @@
           alejandra
           cargo-insta
           cargo-nextest
+          gnupg
           libfaketime
           nil
-          nodePackages.prettier
           openssl
+          prettier
           shellcheck
           shfmt
           typos
