@@ -56,6 +56,7 @@
           shellcheck
           shfmt
           typos
+          zizmor
           zlib
         ];
 

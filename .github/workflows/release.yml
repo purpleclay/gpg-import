@@ -3,6 +3,10 @@ on:
   push:
     tags:
       - "*.*.*"
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ${{ matrix.platform.runs-on }}
@@ -28,10 +32,12 @@ jobs:
             use-zigbuild: false
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           targets: ${{ matrix.platform.target }}
 
@@ -46,7 +52,9 @@ jobs:
         run: cargo install cargo-zigbuild
 
       - name: Cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          lookup-only: true
 
       - name: Build with zigbuild
         if: ${{ matrix.platform.use-zigbuild }}
@@ -73,7 +81,7 @@ jobs:
               PKG_SUFFIX=".zip"
               ;;
           esac;
-          PKG_NAME=$APP_NAME-${{ github.ref_name }}-${{ matrix.platform.target }}$PKG_SUFFIX
+          PKG_NAME=$APP_NAME-${GITHUB_REF_NAME}-${{ matrix.platform.target }}$PKG_SUFFIX
           PKG_DIR=archive/$APP_NAME
           mkdir -p $PKG_DIR
           cp target/${{ matrix.platform.target }}/release/$APP_NAME$EXE_SUFFIX $PKG_DIR/
@@ -95,7 +103,7 @@ jobs:
           echo "archive-path=${PKG_DIR}/${PKG_NAME}" >> $GITHUB_OUTPUT
 
       - name: Upload Archive
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.archive.outputs.archive-name }}
           path: ${{ steps.archive.outputs.archive-path }}
@@ -109,12 +117,13 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install Nix
-        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -127,7 +136,7 @@ jobs:
 
       - name: Download Archives
         id: download
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: archives
           merge-multiple: true
