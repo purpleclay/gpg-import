@@ -1,149 +1,20 @@
 name: release
 on:
   push:
-    tags:
-      - "*.*.*"
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
-  build:
-    runs-on: ${{ matrix.platform.runs-on }}
-    name: build / ${{ matrix.platform.name }}
-    strategy:
-      matrix:
-        platform:
-          - name: linux_x86_64_musl
-            runs-on: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-            use-zigbuild: true
-          - name: linux_aarch64_musl
-            runs-on: ubuntu-24.04
-            target: aarch64-unknown-linux-musl
-            use-zigbuild: true
-          - name: darwin_x86_64
-            runs-on: macos-15
-            target: x86_64-apple-darwin
-            use-zigbuild: false
-          - name: darwin_aarch64
-            runs-on: macos-15
-            target: aarch64-apple-darwin
-            use-zigbuild: false
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-        with:
-          targets: ${{ matrix.platform.target }}
-
-      - name: Setup Zig
-        if: ${{ matrix.platform.use-zigbuild }}
-        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
-        with:
-          version: 0.13.0
-
-      - name: Install cargo-zigbuild
-        if: ${{ matrix.platform.use-zigbuild }}
-        run: cargo install cargo-zigbuild
-
-      - name: Cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          lookup-only: true
-
-      - name: Build with zigbuild
-        if: ${{ matrix.platform.use-zigbuild }}
-        run: cargo zigbuild --locked --release --target ${{ matrix.platform.target }}
-
-      - name: Build with cargo
-        if: ${{ !matrix.platform.use-zigbuild }}
-        run: cargo build --locked --release --target ${{ matrix.platform.target }}
-
-      - name: Archive
-        id: archive
-        shell: bash
-        run: |
-          APP_NAME=$(grep '^name = ' Cargo.toml | head -n1 | cut -d'"' -f2)
-          EXE_SUFFIX=""
-          case ${{ matrix.platform.target }} in
-            *-pc-windows-*)
-              EXE_SUFFIX=".exe"
-              ;;
-          esac;
-          PKG_SUFFIX=".tar.gz";
-          case ${{ matrix.platform.target }} in
-            *-pc-windows-*)
-              PKG_SUFFIX=".zip"
-              ;;
-          esac;
-          PKG_NAME=$APP_NAME-${GITHUB_REF_NAME}-${{ matrix.platform.target }}$PKG_SUFFIX
-          PKG_DIR=archive/$APP_NAME
-          mkdir -p $PKG_DIR
-          cp target/${{ matrix.platform.target }}/release/$APP_NAME$EXE_SUFFIX $PKG_DIR/
-          cp README.md LICENSE $PKG_DIR/
-
-          pushd $PKG_DIR >/dev/null
-          case ${{ matrix.platform.target }} in
-            *-pc-windows-*)
-              7z -y a "${PKG_NAME}" * | tail -2
-              ;;
-            *)
-              tar czf "${PKG_NAME}" *
-              ;;
-          esac;
-          popd >/dev/null
-
-          # Output path to archive for future upload
-          echo "archive-name=${PKG_NAME}" >> $GITHUB_OUTPUT
-          echo "archive-path=${PKG_DIR}/${PKG_NAME}" >> $GITHUB_OUTPUT
-
-      - name: Upload Archive
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.archive.outputs.archive-name }}
-          path: ${{ steps.archive.outputs.archive-path }}
-          retention-days: 1
-
   release:
-    runs-on: ubuntu-24.04
-    name: release
     permissions:
-      contents: write
-    needs: build
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate Release Note
-        id: release_notes
-        run: |
-          echo "note<<EOF" >> $GITHUB_OUTPUT
-          nix run github:purpleclay/release-note >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Download Archives
-        id: download
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: archives
-          merge-multiple: true
-
-      - name: Create Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
-        with:
-          files: ${{ steps.download.outputs.download-path }}/*
-          body: ${{ steps.release_notes.outputs.note }}
-          make_latest: true
+      id-token: write # OIDC identity for Sigstore signing
+      attestations: write # persist attestations
+      contents: write # create the release, upload assets
+      actions: read # list this run's artifacts to resolve their immutable ids
+    uses: purpleclay/release-workflows/.github/workflows/release-rust.yml@20fa5c33ce301259f391655bbc3933426855fc4a # v0.2.0
+    with:
+      bin: gpg-import
+      targets: '["x86_64-unknown-linux-musl","aarch64-unknown-linux-musl","x86_64-apple-darwin","aarch64-apple-darwin"]'
+      # Keep in sync with the rustToolchain pin in flake.nix
+      toolchain: "1.97.1"
