@@ -12,7 +12,7 @@ jobs:
       attestations: write # persist attestations
       contents: write # create the release, upload assets
       actions: read # list this run's artifacts to resolve their immutable ids
-    uses: purpleclay/release-workflows/.github/workflows/release-rust.yml@20fa5c33ce301259f391655bbc3933426855fc4a # v0.2.0
+    uses: purpleclay/release-workflows/.github/workflows/release-rust.yml@aa514c98f60087ca1db9d267e1af51d3a24ef515 # v0.4.0
     with:
       bin: gpg-import
       targets: '["x86_64-unknown-linux-musl","aarch64-unknown-linux-musl","x86_64-apple-darwin","aarch64-apple-darwin"]'
