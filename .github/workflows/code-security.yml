@@ -1,48 +1,76 @@
-name: code security
+name: code_security
 on:
   push:
     branches:
       - main
-    paths:
-      - "src/**"
-      - "Cargo.*"
   pull_request:
     branches:
       - main
-    paths:
-      - "src/**"
-      - "Cargo.*"
   schedule:
-    - cron: "0 5 * * *"
-jobs:
-  trivy-scan:
-    name: code scan
-    runs-on: ubuntu-24.04
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
+    - cron: "0 5 * * *" # daily, as advisories are published against lockfiles already merged
 
-      - name: Checkout
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  cargo_deny:
+    name: cargo_deny
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      security-events: write # needed by codeql-action/upload-sarif to publish scan results as code scanning alerts
+    steps:
+      - name: harden_runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            cache.nixos.org:443
+            cachix.org:443
+            github.com:443
+            index.crates.io:443
+            purpleclay.cachix.org:443
+            releases.nixos.org:443
+            static.crates.io:443
+            static.rust-lang.org:443
+
+      - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Scan
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - name: install_nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
-          scan-type: fs
-          scan-ref: "."
-          scanners: vuln
-          format: sarif
-          output: trivy-results.sarif
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Report
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+      - name: setup_cachix
+        uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
-          sarif_file: trivy-results.sarif
+          name: purpleclay
+          authToken: "${{ secrets.GH_CACHIX }}"
+          skipPush: true
+          useDaemon: false
+
+      # cargo-deny exits 0 with `--format sarif`, even when advisories are
+      # found. This step only produces the report; `check_advisories` below
+      # fails the job. Locations are made relative to the repository root.
+      - name: generate_sarif
+        run: |
+          nix develop -c sh -c 'cargo deny --format sarif check advisories > cargo-deny.sarif'
+          jq --arg root "$GITHUB_WORKSPACE/" \
+            '(.runs[].results[].locations[].physicalLocation.artifactLocation.uri) |= ltrimstr($root)' \
+            cargo-deny.sarif > cargo-deny-relative.sarif
+
+      - name: upload_sarif
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: cargo-deny-relative.sarif
+          category: cargo-deny
+
+      - name: check_advisories
+        run: nix develop -c cargo deny check advisories

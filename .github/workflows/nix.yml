@@ -57,7 +57,7 @@ jobs:
           useDaemon: false
 
       - name: Run Alejandra
-        run: nix develop -c alejandra --check .
+        run: nix develop .#ci -c alejandra --check .
   build:
     runs-on: ${{ matrix.os }}
     name: build / ${{ matrix.os }}
