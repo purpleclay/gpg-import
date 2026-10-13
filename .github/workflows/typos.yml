@@ -51,4 +51,4 @@ jobs:
           useDaemon: false
 
       - name: Run Typos
-        run: nix develop -c typos
+        run: nix develop .#ci -c typos

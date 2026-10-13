@@ -41,7 +41,7 @@ jobs:
           useDaemon: false
 
       - name: Run ShellCheck
-        run: nix develop -c shellcheck scripts/*
+        run: nix develop .#ci -c shellcheck scripts/*
 
   shfmt:
     runs-on: ubuntu-24.04
@@ -66,4 +66,4 @@ jobs:
           useDaemon: false
 
       - name: Run Shfmt
-        run: nix develop -c shfmt -l scripts/*
+        run: nix develop .#ci -c shfmt -l scripts/*

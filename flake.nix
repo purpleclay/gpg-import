@@ -36,7 +36,7 @@
         inherit (nixpkgs) lib;
 
         rustToolchain = pkgs.rust-bin.stable."1.97.1".default.override {
-          extensions = ["rust-src" "cargo" "rustc" "clippy" "rustfmt"];
+          extensions = ["rust-src" "cargo" "rustc" "clippy" "rustfmt" "rust-analyzer"];
         };
 
         rustPlatform = pkgs.makeRustPlatform {
@@ -44,21 +44,28 @@
           rustc = rustToolchain;
         };
 
-        buildInputs = with pkgs; [
+        # Lint tools for CI jobs that don't need the Rust toolchain
+        ciTools = with pkgs; [
           alejandra
-          cargo-insta
-          cargo-nextest
-          gnupg
-          libfaketime
-          nil
-          openssl
-          prettier
           shellcheck
           shfmt
           typos
-          zizmor
-          zlib
         ];
+
+        buildInputs = with pkgs;
+          ciTools
+          ++ [
+            cargo-deny
+            cargo-insta
+            cargo-nextest
+            gnupg
+            libfaketime
+            nil
+            openssl
+            prettier
+            zizmor
+            zlib
+          ];
 
         nativeBuildInputs = with pkgs; [
           rustToolchain
@@ -85,6 +92,10 @@
             inherit nativeBuildInputs;
             inherit (pre-commit-check) shellHook;
             buildInputs = buildInputs ++ pre-commit-check.enabledPackages;
+          };
+
+          devShells.ci = mkShell {
+            packages = ciTools;
           };
 
           packages.default = pkgs.callPackage ./default.nix {
