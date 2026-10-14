@@ -156,6 +156,30 @@ fn import_secret_key_base64_with_passphrase() {
 
 #[test]
 #[serial]
+fn preset_passphrase_fails_when_agent_disallows_preset() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let fixture = fixture.unwrap();
+
+    // The fixture's GNUPGHOME; restart the agent without allow-preset-passphrase
+    let gnupg_home = env::var("GNUPGHOME").unwrap();
+    std::fs::write(
+        std::path::Path::new(&gnupg_home).join("gpg-agent.conf"),
+        "allow-loopback-pinentry\n",
+    )
+    .unwrap();
+    fixture.kill_agent().unwrap();
+
+    let result = gpg::preset_passphrase("A38A309DBDD35F6597F3AB132ECDE01CCA68D62F", "gotham");
+    let err = result.expect_err("preset must fail loudly when the agent rejects it");
+    assert!(
+        err.to_string().contains("Not supported"),
+        "error should carry the agent's response: {err}"
+    );
+}
+
+#[test]
+#[serial]
 fn extract_key_info_expired_secret_key() {
     let fixture = GpgTestFixture::new();
     assert!(fixture.is_ok(), "Failed to create GPG test fixture");
