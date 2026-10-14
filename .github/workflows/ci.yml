@@ -24,7 +24,7 @@ permissions:
   pull-requests: read
 jobs:
   rustfmt:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: github.actor != 'renovate[bot]'
     name: rustfmt / stable
     steps:
@@ -55,7 +55,7 @@ jobs:
         run: nix develop -c cargo fmt --check
 
   clippy:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     name: clippy / stable
     steps:
       - name: Harden Runner
@@ -90,7 +90,7 @@ jobs:
         run: nix develop -c cargo clippy -- -Dwarnings
 
   build-fast:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: github.event_name == 'pull_request'
     name: build-fast / linux_x86_64_musl
     steps:
