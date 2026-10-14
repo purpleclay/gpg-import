@@ -125,15 +125,44 @@ max-cache-ttl 31536000
 allow-preset-passphrase
 allow-loopback-pinentry",
     )?;
-    reload_agent()
+    reload_agent(home_dir)
 }
 
-fn reload_agent() -> Result<()> {
-    gpg_command("gpg-connect-agent")
-        .args(vec!["RELOADAGENT", "/bye"])
-        .output()?;
+/// Reloads the agent serving `home_dir`, the directory whose config was just written
+fn reload_agent(home_dir: &str) -> Result<()> {
+    agent_command(&["--homedir", home_dir], "RELOADAGENT")
+}
 
-    Ok(())
+/// Sends a single command to gpg-agent over stdin (keeping secrets out of
+/// the process table). `gpg-connect-agent` exits 0 even when the agent
+/// answers `ERR`, so success is only reported if the agent replied `OK`
+fn agent_command(args: &[&str], command: &str) -> Result<()> {
+    let mut agent = gpg_command("gpg-connect-agent")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    agent
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("failed to open stdin for gpg-connect-agent"))?
+        .write_all(format!("{command}\n").as_bytes())?;
+
+    let output = agent.wait_with_output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    if output.status.success() && stdout.lines().any(|line| line.starts_with("OK")) {
+        return Ok(());
+    }
+
+    let reason = stdout
+        .lines()
+        .find(|line| line.starts_with("ERR"))
+        .map(str::to_string)
+        .unwrap_or_else(|| String::from_utf8_lossy(&output.stderr).trim().to_string());
+    bail!("gpg-agent rejected the request: {reason}")
 }
 
 /// A GPG private key
@@ -670,25 +699,14 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
 /// Presets the passphrase for a given keygrip, ensuring it is cached for any
 /// subsequent signing request
 pub fn preset_passphrase(keygrip: &str, passphrase: &str) -> Result<()> {
-    let set_passphrase = gpg_command("gpg-connect-agent")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .spawn()?;
-
-    set_passphrase
-        .stdin
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("failed to open stdin for gpg-connect-agent"))?
-        .write_all(
-            format!(
-                "PRESET_PASSPHRASE {} -1 {}",
-                keygrip,
-                hex::encode(passphrase).to_uppercase()
-            )
-            .as_bytes(),
-        )?;
-    set_passphrase.wait_with_output()?;
-    Ok(())
+    agent_command(
+        &[],
+        &format!(
+            "PRESET_PASSPHRASE {} -1 {}",
+            keygrip,
+            hex::encode(passphrase).to_uppercase()
+        ),
+    )
 }
 
 /// Assign a trust level to an imported key
