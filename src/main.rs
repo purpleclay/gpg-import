@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum, builder::FalseyValueParser};
 use gpg_import::import::GpgImport;
 use std::io::Read;
 use std::println;
@@ -28,11 +28,11 @@ struct Args {
     trust_level: Option<TrustLevel>,
 
     /// Skip all GPG configuration for the detected git repository
-    #[arg(short, long, env = "GPG_SKIP_GIT")]
+    #[arg(short, long, env = "GPG_SKIP_GIT", value_parser = FalseyValueParser::new())]
     skip_git: bool,
 
     /// Apply git signing configuration globally
-    #[arg(long, env = "GPG_GIT_GLOBAL_CONFIG")]
+    #[arg(long, env = "GPG_GIT_GLOBAL_CONFIG", value_parser = FalseyValueParser::new())]
     git_global_config: bool,
 
     /// Override the committer name instead of using the value from the GPG key
@@ -44,7 +44,7 @@ struct Args {
     git_committer_email: Option<String>,
 
     /// Simulate the import without making changes
-    #[arg(long, env = "GPG_DRY_RUN")]
+    #[arg(long, env = "GPG_DRY_RUN", value_parser = FalseyValueParser::new())]
     dry_run: bool,
 }
 
@@ -150,6 +150,57 @@ fn print_version_info() {
     for (name, value) in fields {
         if let Some(value) = value {
             println!("{:<12} {value}", format!("{name}:"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    fn parse_with_env(var: &str, value: Option<&str>, cli: &[&str]) -> Args {
+        // SAFETY: #[serial] stops tests in this binary touching the environment concurrently
+        unsafe {
+            match value {
+                Some(value) => std::env::set_var(var, value),
+                None => std::env::remove_var(var),
+            }
+        }
+        let args = Args::try_parse_from(std::iter::once("gpg-import").chain(cli.iter().copied()));
+        unsafe { std::env::remove_var(var) };
+        args.unwrap_or_else(|e| panic!("{var}={value:?} {cli:?}: {e}"))
+    }
+
+    #[test]
+    #[serial]
+    fn boolean_env_vars_accept_common_truthy_and_falsey_values() {
+        type Flag = (&'static str, &'static str, fn(&Args) -> bool);
+        let flags: [Flag; 3] = [
+            ("GPG_SKIP_GIT", "--skip-git", |a| a.skip_git),
+            ("GPG_GIT_GLOBAL_CONFIG", "--git-global-config", |a| {
+                a.git_global_config
+            }),
+            ("GPG_DRY_RUN", "--dry-run", |a| a.dry_run),
+        ];
+        let cases = [
+            (None, false),
+            (Some("true"), true),
+            (Some("1"), true),
+            (Some("false"), false),
+            (Some("0"), false),
+            (Some(""), false),
+        ];
+
+        for (var, flag, get) in flags {
+            for (value, expected) in cases {
+                let args = parse_with_env(var, value, &[]);
+                assert_eq!(get(&args), expected, "{var}={value:?}");
+            }
+
+            // An explicit flag still wins over a falsey env var
+            let args = parse_with_env(var, Some("0"), &[flag]);
+            assert!(get(&args), "{flag} with {var}=0");
         }
     }
 }
