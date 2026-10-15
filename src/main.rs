@@ -4,10 +4,6 @@ use gpg_import::import::GpgImport;
 use std::io::Read;
 use std::println;
 
-pub mod built_info {
-    include!(concat!(env!("OUT_DIR"), "/built.rs"));
-}
-
 #[derive(Parser, Debug)]
 #[command(author, about, long_about = None, disable_version_flag = true, disable_help_subcommand = true)]
 struct Args {
@@ -139,23 +135,21 @@ fn main() -> Result<()> {
 }
 
 fn print_version_short() {
-    println!("{}", built_info::PKG_VERSION);
+    println!("{}", env!("CARGO_PKG_VERSION"));
 }
 
 fn print_version_info() {
-    println!("version:    {}", built_info::PKG_VERSION);
-    println!("rustc:      {}", built_info::RUSTC_VERSION);
-    println!("target:     {}", built_info::TARGET);
-
-    if let Some(git_ref) = built_info::GIT_HEAD_REF {
-        println!(
-            "git_branch: {}",
-            git_ref.strip_prefix("refs/heads/").unwrap_or(git_ref)
-        );
+    let fields = [
+        ("version", Some(env!("CARGO_PKG_VERSION"))),
+        ("rustc", option_env!("GPG_IMPORT_RUSTC")),
+        ("target", option_env!("GPG_IMPORT_TARGET")),
+        ("git_branch", option_env!("GPG_IMPORT_GIT_REF")),
+        ("git_commit", option_env!("GPG_IMPORT_GIT_SHA")),
+        ("commit_date", option_env!("GPG_IMPORT_COMMIT_DATE")),
+    ];
+    for (name, value) in fields {
+        if let Some(value) = value {
+            println!("{:<12} {value}", format!("{name}:"));
+        }
     }
-
-    if let Some(commit_hash) = built_info::GIT_COMMIT_HASH {
-        println!("git_commit: {commit_hash}");
-    }
-    println!("build_date: {}", built_info::BUILT_TIME_UTC);
 }

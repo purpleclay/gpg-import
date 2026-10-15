@@ -4,6 +4,8 @@
   pkg-config,
   rustPlatform,
   zlib,
+  rev ? null,
+  lastModified ? null,
 }:
 rustPlatform.buildRustPackage {
   pname = "gpg-import";
@@ -13,6 +15,10 @@ rustPlatform.buildRustPackage {
   cargoLock = {
     lockFile = ./Cargo.lock;
   };
+
+  # The Nix sandbox has no .git, so build.rs reads the commit from these instead
+  GPG_IMPORT_GIT_SHA = rev;
+  SOURCE_DATE_EPOCH = lastModified;
 
   nativeBuildInputs = [
     pkg-config
