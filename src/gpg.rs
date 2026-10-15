@@ -564,19 +564,29 @@ pub enum GpgError {
 /// Detects the key format and returns the raw key bytes.
 /// Supports ASCII armored keys in both plain text and base64 encoded formats.
 fn decode_key_input(key: &str) -> Result<Vec<u8>> {
-    if key.is_empty() {
-        bail!(GpgError::EmptyKeyInput);
-    }
-
     if key.trim_start().starts_with("-----BEGIN PGP") {
         return Ok(key.as_bytes().to_vec());
     }
 
-    match general_purpose::STANDARD.decode(key) {
+    // `base64` wraps its output at 76 columns by default, and secrets often
+    // gain a trailing newline, so ignore whitespace rather than reject it.
+    let non_whitespace = || {
+        key.bytes()
+            .enumerate()
+            .filter(|(_, b)| !b.is_ascii_whitespace())
+    };
+    let stripped: Vec<u8> = non_whitespace().map(|(_, b)| b).collect();
+    if stripped.is_empty() {
+        bail!(GpgError::EmptyKeyInput);
+    }
+
+    match general_purpose::STANDARD.decode(&stripped) {
         Ok(decoded_key) => Ok(decoded_key),
         Err(e) => match e {
             DecodeError::InvalidByte(offset, byte) => {
-                bail!(GpgError::InvalidByteInGpgKey(offset, byte.as_char()))
+                // Report the position within the key as supplied, not the stripped copy.
+                let position = non_whitespace().nth(offset).map_or(offset, |(i, _)| i);
+                bail!(GpgError::InvalidByteInGpgKey(position, byte.as_char()))
             }
             _ => Err(e.into()),
         },
@@ -1227,5 +1237,21 @@ uid:u::::1700000000::1E9C7598797E7F7A380A72A58B9B7FA28160AB07::robin <robin@dc.c
             matches!(result, Err(GpgError::InvalidGpgKeyData(_))),
             "A second sec record must not silently merge into a hybrid of two keys: {result:?}"
         );
+    }
+
+    #[test]
+    fn decode_key_input_ignores_ascii_whitespace() {
+        // "hello world" encoded, then wrapped with CRLF, a tab and spaces.
+        let decoded = decode_key_input("aGVsbG8g\r\nd29y\tbGQ= \n").unwrap();
+        assert_eq!(decoded, b"hello world");
+    }
+
+    #[test]
+    fn decode_key_input_rejects_invalid_byte_within_wrapped_input() {
+        let err = decode_key_input("aGVsbG8g\nd2!y\nbGQ=\n").unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<GpgError>(),
+            Some(GpgError::InvalidByteInGpgKey(11, '!'))
+        ));
     }
 }
