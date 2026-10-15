@@ -555,6 +555,10 @@ pub enum GpgError {
     /// The specified fingerprint was not found in the key
     #[error("fingerprint not found in key: {0}")]
     FingerprintNotFound(String),
+
+    /// The selected key or subkey is not signing-capable
+    #[error("selected key cannot sign: {0}")]
+    KeyCannotSign(String),
 }
 
 /// Detects the key format and returns the raw key bytes.

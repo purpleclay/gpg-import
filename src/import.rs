@@ -172,7 +172,6 @@ impl GpgImport {
         }
 
         let signing_key = self.resolve_signing_key(private_key)?;
-        validate_signing_key_expiry(private_key, &signing_key)?;
         let primary_uid = private_key.primary_uid();
         let user_email = self
             .git_committer_email
@@ -200,21 +199,35 @@ impl GpgImport {
         Ok(())
     }
 
+    /// With `--fingerprint`, returns it suffixed with `!` so GPG signs with
+    /// exactly that key or subkey rather than the newest signing-capable one.
     fn resolve_signing_key(&self, private_key: &gpg::GpgPrivateKey) -> Result<String> {
-        match &self.fingerprint {
-            Some(fp) => {
-                let matches_subkey = private_key
-                    .subkeys
-                    .iter()
-                    .any(|subkey| fp == &subkey.fingerprint);
+        let Some(fp) = &self.fingerprint else {
+            return Ok(private_key.secret_key.key_id.clone());
+        };
 
-                if fp != &private_key.secret_key.fingerprint && !matches_subkey {
-                    bail!(gpg::GpgError::FingerprintNotFound(fp.clone()));
-                }
-                Ok(fp.clone())
-            }
-            None => Ok(private_key.secret_key.key_id.clone()),
+        let Some(key) = std::iter::once(&private_key.secret_key)
+            .chain(&private_key.subkeys)
+            .find(|key| &key.fingerprint == fp)
+        else {
+            bail!(gpg::GpgError::FingerprintNotFound(fp.clone()));
+        };
+
+        if !key.capabilities.sign {
+            bail!(gpg::GpgError::KeyCannotSign(fp.clone()));
         }
+
+        // The primary key's own expiry is already checked by `gpg::extract_key_info`.
+        if let Some(expiration_date) = key.expiration_date
+            && expiration_date <= Utc::now().timestamp()
+        {
+            bail!(
+                "the selected signing subkey has expired on {}",
+                Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
+            );
+        }
+
+        Ok(format!("{fp}!"))
     }
 
     fn apply_git_config(&self, cfg: &git::SigningConfig, repo: Option<&Repository>) -> Result<()> {
@@ -232,34 +245,6 @@ impl GpgImport {
 
         Ok(())
     }
-}
-
-/// Validates that the key actually selected for signing (as resolved by
-/// `resolve_signing_key`) isn't expired. `signing_key` is either a subkey's
-/// fingerprint (explicit `--fingerprint` selecting a subkey), the primary
-/// key's fingerprint, or the primary key's key id (default, no
-/// `--fingerprint`) -- only the first case names a subkey, so this only has
-/// something to check when `signing_key` matches one. The primary key's own
-/// expiry is already checked unconditionally by `gpg::extract_key_info`.
-fn validate_signing_key_expiry(private_key: &gpg::GpgPrivateKey, signing_key: &str) -> Result<()> {
-    let Some(subkey) = private_key
-        .subkeys
-        .iter()
-        .find(|subkey| subkey.fingerprint == signing_key)
-    else {
-        return Ok(());
-    };
-
-    if let Some(expiration_date) = subkey.expiration_date
-        && expiration_date <= Utc::now().timestamp()
-    {
-        bail!(
-            "the selected signing subkey has expired on {}",
-            Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
-        );
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -489,7 +474,34 @@ mod tests {
             "A --fingerprint matching a non-first subkey should resolve, not error: {:?}",
             result.err()
         );
-        assert_eq!(result.unwrap(), "THIRDSUBKEYFPR");
+        assert_eq!(result.unwrap(), "THIRDSUBKEYFPR!");
+    }
+
+    #[test]
+    fn resolve_signing_key_pins_selected_primary_fingerprint() {
+        let key = key_with_subkeys(&["FIRSTSUBKEYFPR"]);
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_fingerprint(Some("PRIMARYFPR".to_string()));
+
+        let result = import.resolve_signing_key(&key);
+        assert_eq!(result.unwrap(), "PRIMARYFPR!");
+    }
+
+    #[test]
+    fn resolve_signing_key_rejects_encryption_only_subkey() {
+        let mut key = key_with_subkeys(&["ENCRYPTSUBKEYFPR"]);
+        key.subkeys[0].capabilities = GpgCapabilities {
+            encrypt: true,
+            ..Default::default()
+        };
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_fingerprint(Some("ENCRYPTSUBKEYFPR".to_string()));
+
+        let result = import.resolve_signing_key(&key);
+        assert_eq!(
+            result.unwrap_err().downcast::<gpg::GpgError>().unwrap(),
+            gpg::GpgError::KeyCannotSign("ENCRYPTSUBKEYFPR".to_string())
+        );
     }
 
     #[test]
