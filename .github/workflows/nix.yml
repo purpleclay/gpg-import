@@ -21,14 +21,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+permissions: {}
+
 jobs:
   alejandra:
     runs-on: ubuntu-26.04
+    name: alejandra
     if: github.actor != 'renovate[bot]'
     steps:
-      - name: Harden Runner
+      - name: harden_runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
@@ -40,15 +41,15 @@ jobs:
             purpleclay.cachix.org:443
             releases.nixos.org:443
 
-      - name: Checkout
+      - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install Nix
+      - name: install_nix
         uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
 
-      - name: Setup Cachix
+      - name: setup_cachix
         uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: purpleclay
@@ -56,29 +57,29 @@ jobs:
           skipPush: true
           useDaemon: false
 
-      - name: Run Alejandra
+      - name: run_alejandra
         run: nix develop .#ci -c alejandra --check .
   build:
     runs-on: ${{ matrix.os }}
-    name: build / ${{ matrix.os }}
+    name: build_${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        os: [ubuntu-26.04, macos-26]
     steps:
-      - name: Harden Runner
+      - name: harden_runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
-      - name: Checkout
+      - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install Nix
+      - name: install_nix
         uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
 
-      - name: Setup Cachix
+      - name: setup_cachix
         uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: purpleclay
@@ -86,5 +87,5 @@ jobs:
           skipPush: false
           useDaemon: false
 
-      - name: Build Nix Package
+      - name: build_nix_package
         run: nix build
