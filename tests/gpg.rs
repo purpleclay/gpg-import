@@ -64,6 +64,28 @@ fn import_secret_key_base64() {
     assert!(sign_result.is_ok(), "Failed to create and sign test file");
 }
 
+#[test]
+#[serial]
+fn import_secret_key_base64_wrapped() {
+    let fixture = GpgTestFixture::new();
+    assert!(fixture.is_ok(), "Failed to create GPG test fixture");
+    let fixture = fixture.unwrap();
+
+    // Encoded with GNU coreutils `base64` defaults: 76-column lines and a
+    // trailing newline, as produced by the README's export workflow.
+    let gpg_key = include_str!("testdata/no-passphrase.base64.wrapped.key");
+    let result = gpg::import_secret_key(gpg_key);
+    assert!(
+        result.is_ok(),
+        "Failed to import wrapped base64 GPG key: {:?}",
+        result.err()
+    );
+
+    let fingerprint = result.unwrap();
+    let sign_result = fixture.create_and_sign_file(&fingerprint);
+    assert!(sign_result.is_ok(), "Failed to create and sign test file");
+}
+
 /// Temporarily overrides locale env vars for the current process, restoring
 /// the original values (or absence) when dropped
 struct LocaleGuard {
