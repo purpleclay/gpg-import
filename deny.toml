@@ -1,0 +1,9 @@
+# cargo-deny configuration: https://embarkstudios.github.io/cargo-deny/
+#
+# Only the advisories check is run (`cargo deny check advisories`). Dev
+# dependencies stay in scope, as they run in CI.
+
+[advisories]
+# Advisories to ignore. Every entry must give a reason, for example:
+# { id = "RUSTSEC-0000-0000", reason = "only reachable from tests via wiremock" }
+ignore = []

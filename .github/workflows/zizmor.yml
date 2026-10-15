@@ -1,4 +1,4 @@
-name: lint
+name: zizmor
 on:
   push:
     branches:
@@ -18,15 +18,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
+  zizmor:
     name: lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
-      security-events: write # Needed by zizmor-action to publish scan results as code scanning alerts
+      security-events: write # needed by zizmor-action to publish scan results as code scanning alerts
     steps:
-      - name: Harden Runner
+      - name: harden_runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
@@ -42,7 +42,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: zizmor
+      - name: run
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
           persona: pedantic
