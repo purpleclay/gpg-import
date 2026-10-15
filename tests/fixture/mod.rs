@@ -159,6 +159,38 @@ impl GpgTestFixture {
         Ok(())
     }
 
+    /// Adds an additional subkey to an existing, unprotected primary key with
+    /// its creation time frozen at the given date. GPG picks the newest
+    /// signing subkey by creation time, so tests use this to make that
+    /// order deterministic.
+    #[cfg(unix)]
+    pub fn add_subkey_on(&self, fingerprint: &str, usage: &str, yyyy_mm_dd: &str) -> Result<()> {
+        let output = Command::new("faketime")
+            .args([
+                "-f",
+                &freeze_at(yyyy_mm_dd),
+                "gpg",
+                "--batch",
+                "--pinentry-mode",
+                "loopback",
+                "--passphrase",
+                "",
+                "--yes",
+                "--quick-add-key",
+                fingerprint,
+                "rsa2048",
+                usage,
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("Failed to add {} subkey: {}", usage, stderr);
+        }
+
+        Ok(())
+    }
+
     /// Adds an additional subkey protected by the given passphrase to an
     /// existing, passphrase-protected primary key
     pub fn add_protected_subkey(
