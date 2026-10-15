@@ -15,7 +15,8 @@ struct Args {
     #[arg(short, long, env = "GPG_PRIVATE_KEY", value_name = "GPG_KEY")]
     key: Option<String>,
 
-    /// The passphrase of the GPG private key if set
+    /// The passphrase of the GPG private key if set. Use - for stdin or @path
+    /// to read from a file
     #[arg(short, long, env = "GPG_PASSPHRASE")]
     passphrase: Option<String>,
 
@@ -84,17 +85,17 @@ impl TrustLevel {
     }
 }
 
-/// Resolves the key input from stdin, a file, or a direct value.
-fn resolve_key_input(key: &str) -> Result<String> {
-    if key == "-" {
+/// Resolves a secret (key or passphrase) from stdin, a file, or a direct value.
+fn resolve_secret_input(name: &str, value: &str) -> Result<String> {
+    if value == "-" {
         let mut buffer = String::default();
         std::io::stdin().read_to_string(&mut buffer)?;
         Ok(buffer)
-    } else if let Some(path) = key.strip_prefix('@') {
+    } else if let Some(path) = value.strip_prefix('@') {
         std::fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("Failed to read key file '{}': {}", path, e))
+            .map_err(|e| anyhow::anyhow!("Failed to read {} file '{}': {}", name, path, e))
     } else {
-        Ok(key.to_string())
+        Ok(value.to_string())
     }
 }
 
@@ -120,10 +121,19 @@ fn main() -> Result<()> {
             "Key is required for GPG import. Use --key or set GPG_PRIVATE_KEY environment variable."
         )
     })?;
-    let key = resolve_key_input(&key_input)?;
+    if key_input == "-" && args.passphrase.as_deref() == Some("-") {
+        anyhow::bail!(
+            "--key and --passphrase cannot both read from stdin. Pass one of them with @path instead."
+        );
+    }
+    let key = resolve_secret_input("key", &key_input)?;
+    let passphrase = args
+        .passphrase
+        .map(|passphrase| resolve_secret_input("passphrase", &passphrase))
+        .transpose()?;
 
     GpgImport::new(key)
-        .with_passphrase(args.passphrase)
+        .with_passphrase(passphrase)
         .with_fingerprint(args.fingerprint)
         .with_trust_level(args.trust_level.map(|t| t.trust_db_value()))
         .skip_git(args.skip_git)
