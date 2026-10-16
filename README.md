@@ -100,7 +100,7 @@ All options can be set via CLI flags or environment variables:
 | Flag                    | Environment Variable      | Description                                                |
 | ----------------------- | ------------------------- | ---------------------------------------------------------- |
 | `-k, --key`             | `GPG_PRIVATE_KEY`         | GPG private key (use `-` for stdin or `@path` for file) |
-| `-p, --passphrase`      | `GPG_PASSPHRASE`          | Passphrase for the GPG key                                 |
+| `-p, --passphrase`      | `GPG_PASSPHRASE`          | Passphrase for the GPG key (use `-` for stdin or `@path` for file) |
 | `-f, --fingerprint`     | `GPG_FINGERPRINT`         | Fingerprint of a specific key or subkey to use for signing |
 | `-t, --trust-level`     | `GPG_TRUST_LEVEL`         | Trust level for the key (1-5)                              |
 | `-s, --skip-git`        | `GPG_SKIP_GIT`            | Skip git configuration                                     |
@@ -142,6 +142,17 @@ Read a key from a file:
 ```sh
 gpg-import --key @/path/to/private.key
 ```
+
+### Read the passphrase from a file or stdin
+
+A passphrase given with `--passphrase` is visible to other processes on the machine (e.g. through `ps`). Reading it from a file or stdin keeps it out of the process list. Both examples take the key from `GPG_PRIVATE_KEY`:
+
+```sh
+gpg-import --passphrase @/path/to/passphrase
+printf '%s' "$GPG_PASSPHRASE" | gpg-import --passphrase -
+```
+
+`--key` and `--passphrase` can't both read from stdin, so use `@path` for one of them.
 
 ### Global git configuration
 
