@@ -58,7 +58,7 @@ fn apply_signing_config(config: &mut Config, cfg: &SigningConfig) -> Result<()> 
     config.set_str("user.signingKey", &cfg.key_id)?;
     config.set_bool("commit.gpgsign", cfg.commit_sign)?;
     config.set_bool("tag.gpgsign", cfg.tag_sign)?;
-    if cfg.tag_sign {
+    if cfg.push_sign {
         config.set_str("push.gpgsign", "if-asked")?;
     }
     Ok(())
@@ -96,6 +96,36 @@ mod tests {
         assert!(config.get_bool("commit.gpgsign").unwrap());
         assert!(config.get_bool("tag.gpgsign").unwrap());
         assert_eq!(config.get_string("push.gpgsign").unwrap(), "if-asked");
+    }
+
+    #[test]
+    fn configure_signing_gates_push_gpgsign_on_push_sign() {
+        for (tag_sign, push_sign) in [(true, false), (false, true)] {
+            let temp_dir = TempDir::new().unwrap();
+            let repo = Repository::init(temp_dir.path()).unwrap();
+
+            let cfg = SigningConfig {
+                user_name: "batman".to_string(),
+                user_email: "batman@dc.com".to_string(),
+                key_id: "FDEFE8AB8796E127".to_string(),
+                commit_sign: true,
+                tag_sign,
+                push_sign,
+            };
+            configure_signing(&repo, &cfg).unwrap();
+
+            // Local level only, so a push.gpgsign in the user's global config can't leak in
+            let config = repo
+                .config()
+                .unwrap()
+                .open_level(git2::ConfigLevel::Local)
+                .unwrap();
+            assert_eq!(
+                config.get_string("push.gpgsign").ok().as_deref(),
+                push_sign.then_some("if-asked"),
+                "tag_sign={tag_sign} push_sign={push_sign}"
+            );
+        }
     }
 
     #[test]
