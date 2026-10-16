@@ -12,9 +12,8 @@ use nom::{
 use std::{
     fmt::{self, Display},
     fs,
-    io::Read,
     path::Path,
-    process::Command,
+    process::{Command, Output},
     str::FromStr,
 };
 use std::{io::Write, process::Stdio};
@@ -91,10 +90,48 @@ fn gpg_command(program: &str) -> Command {
     cmd
 }
 
+/// Runs a GPG binary to completion and fails with its trimmed stderr if it
+/// exits non-zero. `input` is written from a separate thread while stdout
+/// and stderr are drained, so neither side can block on a full pipe, and the
+/// process is always waited on, even if it exits before reading its input
+fn run(program: &str, args: &[&str], input: &[u8]) -> Result<Output> {
+    let mut child = gpg_command(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("failed to open stdin for {program}"))?;
+
+    let (output, written) = std::thread::scope(|scope| {
+        let writer = scope.spawn(move || stdin.write_all(input));
+        let output = child.wait_with_output();
+        (output, writer.join())
+    });
+    let output = output?;
+
+    // Check the exit status first: a process that exits early also breaks
+    // the stdin pipe, and its stderr explains why
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(GpgError::CommandFailed(
+            program.to_string(),
+            output.status.to_string(),
+            stderr.trim().to_string()
+        ));
+    }
+    written.map_err(|_| anyhow::anyhow!("stdin writer for {program} panicked"))??;
+
+    Ok(output)
+}
+
 /// Inspects the OS for a GPG client and retrieves details about the
 /// currently installed version
 pub fn detect_version() -> Result<GpgInfo> {
-    let gpg_details = gpg_command("gpg").arg("--version").output()?;
+    let gpg_details = run("gpg", &["--version"], b"")?;
 
     let output = String::from_utf8(gpg_details.stdout)?;
     let gpg_info = output.parse::<GpgInfo>()?;
@@ -137,23 +174,10 @@ fn reload_agent(home_dir: &str) -> Result<()> {
 /// the process table). `gpg-connect-agent` exits 0 even when the agent
 /// answers `ERR`, so success is only reported if the agent replied `OK`
 fn agent_command(args: &[&str], command: &str) -> Result<()> {
-    let mut agent = gpg_command("gpg-connect-agent")
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    agent
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("failed to open stdin for gpg-connect-agent"))?
-        .write_all(format!("{command}\n").as_bytes())?;
-
-    let output = agent.wait_with_output()?;
+    let output = run("gpg-connect-agent", args, format!("{command}\n").as_bytes())?;
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    if output.status.success() && stdout.lines().any(|line| line.starts_with("OK")) {
+    if stdout.lines().any(|line| line.starts_with("OK")) {
         return Ok(());
     }
 
@@ -559,6 +583,10 @@ pub enum GpgError {
     /// The selected key or subkey is not signing-capable
     #[error("selected key cannot sign: {0}")]
     KeyCannotSign(String),
+
+    /// A GPG process ran but exited non-zero: program, exit status, stderr
+    #[error("{0} failed ({1}): {2}")]
+    CommandFailed(String, String, String),
 }
 
 /// Detects the key format and returns the raw key bytes.
@@ -634,30 +662,23 @@ pub fn import_secret_key(key: &str) -> Result<String> {
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("status file path is not valid UTF-8"))?;
 
-    let mut gpg_import = gpg_command("gpg")
-        .args(["--status-file", status_path, "--import", "--batch", "--yes"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    gpg_import
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("failed to open stdin for gpg process"))?
-        .write_all(&decoded)?;
-
-    let mut stderr = String::default();
-    gpg_import
-        .stderr
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("failed to open stderr for gpg process"))?
-        .read_to_string(&mut stderr)?;
-
-    let status = gpg_import.wait()?;
+    // Only gpg rejecting the key means the key is invalid. Failing to start
+    // gpg or talk to it is passed through unchanged
+    let (succeeded, stderr) = match run(
+        "gpg",
+        &["--status-file", status_path, "--import", "--batch", "--yes"],
+        &decoded,
+    ) {
+        Ok(output) => (true, String::from_utf8_lossy(&output.stderr).into_owned()),
+        Err(e) => match e.downcast::<GpgError>() {
+            Ok(GpgError::CommandFailed(_, _, stderr)) => (false, stderr),
+            Ok(other) => return Err(other.into()),
+            Err(e) => return Err(e),
+        },
+    };
     let status_records = fs::read_to_string(status_file.path())?;
 
-    match (status.success(), parse_status_import(&status_records)) {
+    match (succeeded, parse_status_import(&status_records)) {
         (true, Some(fingerprint)) => Ok(fingerprint),
         _ => {
             let detail = stderr.trim();
@@ -725,8 +746,9 @@ pub fn preset_passphrase(keygrip: &str, passphrase: &str) -> Result<()> {
 
 /// Assign a trust level to an imported key
 pub fn assign_trust_level(key_id: &str, trust_level: u8) -> Result<()> {
-    let set_trust = gpg_command("gpg")
-        .args(vec![
+    run(
+        "gpg",
+        &[
             "--batch",
             "--no-tty",
             "--command-fd",
@@ -735,17 +757,9 @@ pub fn assign_trust_level(key_id: &str, trust_level: u8) -> Result<()> {
             key_id,
             "trust",
             "quit",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .spawn()?;
-
-    set_trust
-        .stdin
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("failed to open stdin for gpg process"))?
-        .write_all(format!("{trust_level}\ny\n").as_bytes())?;
-    set_trust.wait_with_output()?;
+        ],
+        format!("{trust_level}\ny\n").as_bytes(),
+    )?;
     Ok(())
 }
 
@@ -1253,5 +1267,28 @@ uid:u::::1700000000::1E9C7598797E7F7A380A72A58B9B7FA28160AB07::robin <robin@dc.c
             err.downcast_ref::<GpgError>(),
             Some(GpgError::InvalidByteInGpgKey(11, '!'))
         ));
+    }
+
+    const MIB: usize = 1024 * 1024;
+
+    #[test]
+    fn run_reports_stderr_on_non_zero_exit() {
+        let err = run("sh", &["-c", "echo boom >&2; exit 3"], b"").unwrap_err();
+        assert!(err.to_string().contains("boom"), "{err}");
+    }
+
+    #[test]
+    fn run_drains_stderr_while_writing_stdin() {
+        // Fills the stderr pipe before reading stdin, which deadlocks if
+        // stdin is written in full before stderr is drained
+        let script = "head -c 1048576 /dev/zero | tr '\\0' x >&2; cat >/dev/null";
+        let output = run("sh", &["-c", script], &vec![b'y'; MIB]).unwrap();
+        assert_eq!(output.stderr.len(), MIB);
+    }
+
+    #[test]
+    fn run_reports_exit_when_child_stops_reading_stdin() {
+        let err = run("sh", &["-c", "echo early >&2; exit 4"], &vec![b'y'; MIB]).unwrap_err();
+        assert!(err.to_string().contains("early"), "{err}");
     }
 }
