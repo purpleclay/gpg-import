@@ -518,6 +518,15 @@ Name-Email: batman@dc.com
 
 #[test]
 #[serial]
+fn assign_trust_level_fails_for_unknown_key() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    let result = gpg::assign_trust_level("0000000000000000", 5);
+    assert!(result.is_err(), "Trust for an unknown key must be reported");
+}
+
+#[test]
+#[serial]
 fn assign_trust_level() {
     let fixture = GpgTestFixture::new();
     assert!(fixture.is_ok(), "Failed to create GPG test fixture");
@@ -534,6 +543,19 @@ fn assign_trust_level() {
     let key_info = key_info.unwrap();
     let result = gpg::assign_trust_level(&key_info.secret_key.key_id, 5);
     assert!(result.is_ok(), "Failed to assign trust level");
+
+    // Ownertrust is stored as the trust level plus one, so ultimate (5) is 6
+    let ownertrust = std::process::Command::new("gpg")
+        .arg("--export-ownertrust")
+        .output()
+        .expect("Failed to export ownertrust");
+    let expected = format!("{}:6:", key_info.secret_key.fingerprint);
+    assert!(
+        String::from_utf8_lossy(&ownertrust.stdout)
+            .lines()
+            .any(|line| line == expected),
+        "ownertrust should record ultimate trust (6) for the imported key"
+    );
 }
 
 #[test]
@@ -599,6 +621,24 @@ fn import_secret_key_valid_base64_invalid_gpg_data() {
         matches!(gpg_err, gpg::GpgError::InvalidGpgKeyData(_)),
         "Expected InvalidGpgKeyData error, got: {}",
         gpg_err
+    );
+}
+
+#[test]
+#[serial]
+fn import_secret_key_does_not_blame_the_key_when_gpg_cannot_start() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+    let empty_path = tempfile::TempDir::new().unwrap();
+    let _path = LocaleGuard::set(&[("PATH", empty_path.path().to_str().unwrap())]);
+
+    let gpg_key = include_str!("testdata/no-passphrase.base64.key");
+    let err = gpg::import_secret_key(gpg_key).unwrap_err();
+    assert!(
+        !matches!(
+            err.downcast_ref::<gpg::GpgError>(),
+            Some(gpg::GpgError::InvalidGpgKeyData(_))
+        ),
+        "A gpg that cannot start must not be reported as an invalid key: {err}"
     );
 }
 
