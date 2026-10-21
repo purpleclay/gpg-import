@@ -1,6 +1,6 @@
 use crate::{git, gpg};
 use anyhow::{Result, bail};
-use chrono::{TimeZone, Utc};
+use chrono::Utc;
 use git2::Repository;
 
 /// A builder for importing GPG keys with optional configuration.
@@ -223,7 +223,7 @@ impl GpgImport {
         {
             bail!(
                 "the selected signing subkey has expired on {}",
-                Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
+                gpg::format_timestamp(expiration_date)
             );
         }
 
