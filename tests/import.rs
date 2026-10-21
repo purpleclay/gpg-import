@@ -1,4 +1,3 @@
-use git2::Repository;
 use gpg_import::{gpg, import::GpgImport};
 use serial_test::serial;
 use std::{env, path::Path, process::Command};
@@ -8,7 +7,7 @@ mod fixture;
 use fixture::GpgTestFixture;
 
 /// Temporarily changes the process's current directory, restoring it when
-/// dropped. `git::is_repo` resolves the repo via `Repository::open(".")`,
+/// dropped. `git::is_repo` resolves the repo from the current directory,
 /// so tests that exercise git configuration need to point the process at a
 /// throwaway repo instead of this project's own checkout.
 struct CwdGuard {
@@ -27,6 +26,25 @@ impl Drop for CwdGuard {
     fn drop(&mut self) {
         let _ = env::set_current_dir(&self.original);
     }
+}
+
+fn git_init(dir: &Path) {
+    let status = Command::new("git")
+        .args(["init", "-q"])
+        .arg(dir)
+        .status()
+        .expect("Failed to run git init");
+    assert!(status.success(), "Failed to init throwaway git repo");
+}
+
+fn git_config_get(dir: &Path, key: &str) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["config", "--local", "--get", key])
+        .output()
+        .expect("Failed to run git config");
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 #[test]
@@ -92,7 +110,7 @@ Passphrase: {passphrase}
     // project checkout), selecting the non-first subkey by fingerprint --
     // the CLI --fingerprint path affected by the resolve_signing_key bug.
     let repo_dir = TempDir::new().unwrap();
-    Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+    git_init(repo_dir.path());
     let _cwd_guard =
         CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
 
@@ -107,11 +125,7 @@ Passphrase: {passphrase}
         result.err()
     );
 
-    let repo = Repository::open(repo_dir.path()).expect("Failed to reopen throwaway repo");
-    let config = repo.config().expect("Failed to read throwaway repo config");
-    let signing_key = config
-        .get_string("user.signingKey")
-        .expect("user.signingKey should be set");
+    let signing_key = git_config_get(repo_dir.path(), "user.signingKey");
     assert_eq!(
         signing_key,
         format!("{signing_subkey_fingerprint}!"),
@@ -166,7 +180,7 @@ Name-Email: batman@dc.com
     let older_subkey_fingerprint = key_info.subkeys[0].fingerprint.clone();
 
     let repo_dir = TempDir::new().unwrap();
-    Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+    git_init(repo_dir.path());
     let _cwd_guard =
         CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
 

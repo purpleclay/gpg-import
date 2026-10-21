@@ -1,9 +1,6 @@
 {
   lib,
-  openssl,
-  pkg-config,
   rustPlatform,
-  zlib,
   rev ? null,
   lastModified ? null,
 }:
@@ -19,15 +16,6 @@ rustPlatform.buildRustPackage {
   # The Nix sandbox has no .git, so build.rs reads the commit from these instead
   GPG_IMPORT_GIT_SHA = rev;
   SOURCE_DATE_EPOCH = lastModified;
-
-  nativeBuildInputs = [
-    pkg-config
-  ];
-
-  buildInputs = [
-    openssl
-    zlib
-  ];
 
   meta = with lib; {
     homepage = "https://github.com/purpleclay/gpg-import";

@@ -7,6 +7,9 @@
 
 Import and configure GPG signing for git. Runs on Linux and MacOS.
 
+> [!TIP]
+> Requires GnuPG (`gpg` and `gpg-connect-agent`) on your `$PATH`, and `git` for configuring signing. `git` isn't needed with `--skip-git`.
+
 ## Features
 
 - Import GPG keys in ASCII armored format (_optionally base64 encoded for CI environments_).

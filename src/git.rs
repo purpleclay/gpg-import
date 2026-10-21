@@ -1,6 +1,9 @@
-use anyhow::Result;
-use git2::{Config, Repository};
-use std::fmt::{self, Display};
+use anyhow::{Result, bail};
+use std::{
+    fmt::{self, Display},
+    io::ErrorKind,
+    process::{Command, Output},
+};
 
 /// Git GPG signing configuration that will written to the local
 /// .git/config of the repository
@@ -34,32 +37,69 @@ impl Display for SigningConfig {
     }
 }
 
-/// Determines if the current working directory is in fact a git repository
-pub fn is_repo() -> Option<Repository> {
-    Repository::open(".").ok()
+/// Runs git pinned to the `C` locale, so its error messages can be matched,
+/// and fails with its trimmed stderr if it exits non-zero
+fn git(args: &[&str]) -> Result<Output> {
+    let output = Command::new("git")
+        .args(args)
+        .env("LC_ALL", "C")
+        .env_remove("LANGUAGE")
+        .output()?;
+    if !output.status.success() {
+        bail!(
+            "git {} failed ({}): {}",
+            args.join(" "),
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(output)
+}
+
+/// Determines if the current working directory is within a git repository,
+/// searching parent directories. A missing git binary counts as no repository,
+/// but any other git failure (e.g. a repository with dubious ownership) is an
+/// error rather than a silent skip
+pub fn is_repo() -> Result<bool> {
+    match git(&["rev-parse", "--git-dir"]) {
+        Ok(_) => Ok(true),
+        Err(e) if e.to_string().contains("not a git repository") => Ok(false),
+        Err(e) => match e.downcast_ref::<std::io::Error>() {
+            Some(io) if io.kind() == ErrorKind::NotFound => Ok(false),
+            _ => Err(e),
+        },
+    }
 }
 
 /// Configures the current repository to support GPG signing based on
 /// the provided config
-pub fn configure_signing(repo: &Repository, cfg: &SigningConfig) -> Result<()> {
-    let mut config = repo.config()?;
-    apply_signing_config(&mut config, cfg)
+pub fn configure_signing(cfg: &SigningConfig) -> Result<()> {
+    apply_signing_config(&["--local"], cfg)
 }
 
 /// Configures GPG signing globally based on the provided config
 pub fn configure_signing_global(cfg: &SigningConfig) -> Result<()> {
-    let mut config = Config::open_default()?;
-    apply_signing_config(&mut config, cfg)
+    apply_signing_config(&["--global"], cfg)
 }
 
-fn apply_signing_config(config: &mut Config, cfg: &SigningConfig) -> Result<()> {
-    config.set_str("user.name", &cfg.user_name)?;
-    config.set_str("user.email", &cfg.user_email)?;
-    config.set_str("user.signingKey", &cfg.key_id)?;
-    config.set_bool("commit.gpgsign", cfg.commit_sign)?;
-    config.set_bool("tag.gpgsign", cfg.tag_sign)?;
+fn apply_signing_config(scope: &[&str], cfg: &SigningConfig) -> Result<()> {
+    let commit_sign = cfg.commit_sign.to_string();
+    let tag_sign = cfg.tag_sign.to_string();
+    let mut entries = vec![
+        ("user.name", cfg.user_name.as_str()),
+        ("user.email", cfg.user_email.as_str()),
+        ("user.signingKey", cfg.key_id.as_str()),
+        ("commit.gpgsign", commit_sign.as_str()),
+        ("tag.gpgsign", tag_sign.as_str()),
+    ];
     if cfg.push_sign {
-        config.set_str("push.gpgsign", "if-asked")?;
+        entries.push(("push.gpgsign", "if-asked"));
+    }
+
+    // --end-of-options stops a value such as a name starting with `-` being
+    // read as an option
+    for (key, value) in entries {
+        git(&[&["config"], scope, &["--end-of-options", key, value]].concat())?;
     }
     Ok(())
 }
@@ -67,65 +107,102 @@ fn apply_signing_config(config: &mut Config, cfg: &SigningConfig) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+    use std::path::Path;
     use tempfile::TempDir;
 
-    #[test]
-    fn configure_signing_sets_git_config() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo = Repository::init(temp_dir.path()).unwrap();
-
-        let cfg = SigningConfig {
-            user_name: "batman".to_string(),
+    fn signing_config(user_name: &str, tag_sign: bool, push_sign: bool) -> SigningConfig {
+        SigningConfig {
+            user_name: user_name.to_string(),
             user_email: "batman@dc.com".to_string(),
             key_id: "FDEFE8AB8796E127".to_string(),
             commit_sign: true,
-            tag_sign: true,
-            push_sign: true,
-        };
+            tag_sign,
+            push_sign,
+        }
+    }
 
-        let result = configure_signing(&repo, &cfg);
-        assert!(result.is_ok(), "Should configure signing");
-
-        let config = repo.config().unwrap();
-        assert_eq!(config.get_string("user.name").unwrap(), "batman");
-        assert_eq!(config.get_string("user.email").unwrap(), "batman@dc.com");
-        assert_eq!(
-            config.get_string("user.signingKey").unwrap(),
-            "FDEFE8AB8796E127"
-        );
-        assert!(config.get_bool("commit.gpgsign").unwrap());
-        assert!(config.get_bool("tag.gpgsign").unwrap());
-        assert_eq!(config.get_string("push.gpgsign").unwrap(), "if-asked");
+    /// Reads a key from a standalone config file, so neither the user's own
+    /// config nor this project's checkout can affect the result. Tests that
+    /// spawn git are serial with the tests that change the current directory,
+    /// as git fails if that directory is deleted while it starts
+    fn config_get(file: &Path, key: &str) -> Option<String> {
+        let file = file.to_str().unwrap();
+        git(&["config", "--file", file, "--get", key])
+            .ok()
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
     #[test]
-    fn configure_signing_gates_push_gpgsign_on_push_sign() {
+    #[serial]
+    fn apply_signing_config_sets_git_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let file = temp_dir.path().join("config");
+
+        let result = apply_signing_config(
+            &["--file", file.to_str().unwrap()],
+            &signing_config("batman", true, true),
+        );
+        assert!(
+            result.is_ok(),
+            "Should configure signing: {:?}",
+            result.err()
+        );
+
+        assert_eq!(config_get(&file, "user.name").as_deref(), Some("batman"));
+        assert_eq!(
+            config_get(&file, "user.email").as_deref(),
+            Some("batman@dc.com")
+        );
+        assert_eq!(
+            config_get(&file, "user.signingKey").as_deref(),
+            Some("FDEFE8AB8796E127")
+        );
+        assert_eq!(config_get(&file, "commit.gpgsign").as_deref(), Some("true"));
+        assert_eq!(config_get(&file, "tag.gpgsign").as_deref(), Some("true"));
+        assert_eq!(
+            config_get(&file, "push.gpgsign").as_deref(),
+            Some("if-asked")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn apply_signing_config_gates_push_gpgsign_on_push_sign() {
         for (tag_sign, push_sign) in [(true, false), (false, true)] {
             let temp_dir = TempDir::new().unwrap();
-            let repo = Repository::init(temp_dir.path()).unwrap();
+            let file = temp_dir.path().join("config");
 
-            let cfg = SigningConfig {
-                user_name: "batman".to_string(),
-                user_email: "batman@dc.com".to_string(),
-                key_id: "FDEFE8AB8796E127".to_string(),
-                commit_sign: true,
-                tag_sign,
-                push_sign,
-            };
-            configure_signing(&repo, &cfg).unwrap();
+            apply_signing_config(
+                &["--file", file.to_str().unwrap()],
+                &signing_config("batman", tag_sign, push_sign),
+            )
+            .unwrap();
 
-            // Local level only, so a push.gpgsign in the user's global config can't leak in
-            let config = repo
-                .config()
-                .unwrap()
-                .open_level(git2::ConfigLevel::Local)
-                .unwrap();
             assert_eq!(
-                config.get_string("push.gpgsign").ok().as_deref(),
+                config_get(&file, "push.gpgsign").as_deref(),
                 push_sign.then_some("if-asked"),
                 "tag_sign={tag_sign} push_sign={push_sign}"
             );
         }
+    }
+
+    #[test]
+    #[serial]
+    fn apply_signing_config_writes_values_starting_with_a_dash() {
+        let temp_dir = TempDir::new().unwrap();
+        let file = temp_dir.path().join("config");
+
+        let result = apply_signing_config(
+            &["--file", file.to_str().unwrap()],
+            &signing_config("--batman", true, true),
+        );
+        assert!(
+            result.is_ok(),
+            "Should configure signing: {:?}",
+            result.err()
+        );
+        assert_eq!(config_get(&file, "user.name").as_deref(), Some("--batman"));
     }
 
     #[test]
