@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use base64::{DecodeError, Engine as _, engine::general_purpose};
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use nom::{
     AsChar, Finish, IResult, Parser,
     branch::alt,
@@ -317,13 +317,22 @@ impl Display for GpgPrivateKey {
     }
 }
 
-fn format_timestamp(secs_since_epoch: i64) -> String {
-    let dt = Utc.timestamp_opt(secs_since_epoch, 0).unwrap();
-    dt.to_rfc2822()
+/// Returns the timestamp as a date only if `to_rfc2822` can format it
+/// without panicking, which needs a year from 0 to 9999
+fn rfc2822_datetime(secs_since_epoch: i64) -> Option<DateTime<Utc>> {
+    DateTime::from_timestamp(secs_since_epoch, 0).filter(|dt| (0..=9999).contains(&dt.year()))
+}
+
+/// Formats as RFC 2822, falling back to the raw seconds if out of range
+pub(crate) fn format_timestamp(secs_since_epoch: i64) -> String {
+    rfc2822_datetime(secs_since_epoch)
+        .map_or_else(|| secs_since_epoch.to_string(), |dt| dt.to_rfc2822())
 }
 
 fn format_expiration_in_days(secs_since_epoch: i64) -> String {
-    let expires_on = Utc.timestamp_opt(secs_since_epoch, 0).unwrap();
+    let Some(expires_on) = rfc2822_datetime(secs_since_epoch) else {
+        return secs_since_epoch.to_string();
+    };
     let now = Utc::now();
     let days_until_expiry = (expires_on - now).num_days();
 
@@ -487,7 +496,9 @@ fn field<'a>(
 fn parse_timestamp(value: &str, line_no: usize, line: &str) -> Result<i64, GpgError> {
     value
         .parse::<i64>()
-        .map_err(|_| GpgError::MalformedKeyRecord(line_no + 1, line.to_string()))
+        .ok()
+        .filter(|secs| DateTime::from_timestamp(*secs, 0).is_some())
+        .ok_or_else(|| GpgError::MalformedKeyRecord(line_no + 1, line.to_string()))
 }
 
 fn parse_optional_timestamp(
@@ -718,7 +729,7 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
     {
         bail!(
             "GPG secret key has expired on {}",
-            Utc.timestamp_opt(expiration_date, 0).unwrap().to_rfc2822()
+            format_timestamp(expiration_date)
         );
     }
 
@@ -1206,6 +1217,43 @@ grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:"
             Err(GpgError::MalformedKeyRecord(line_no, _)) => assert_eq!(line_no, 1),
             other => panic!("expected MalformedKeyRecord on line 1, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_out_of_range_timestamp_fails() {
+        let result = format!(
+            "sec:u:4096:1:FDEFE8AB8796E127:{}:::u:::scESC:::+:::23::0:",
+            i64::MAX
+        )
+        .parse::<GpgPrivateKey>();
+
+        assert!(matches!(result, Err(GpgError::MalformedKeyRecord(1, _))));
+    }
+
+    #[test]
+    fn format_out_of_range_timestamp_does_not_panic() {
+        assert_eq!(format_timestamp(i64::MAX), i64::MAX.to_string());
+        assert!(format_expiration_in_days(i64::MAX).starts_with(&i64::MAX.to_string()));
+    }
+
+    #[test]
+    fn format_timestamp_outside_rfc2822_years_does_not_panic() {
+        // 0000-01-01T00:00:00Z and 9999-12-31T23:59:59Z are the RFC 2822 bounds
+        const YEAR_0_START: i64 = -62_167_219_200;
+        const YEAR_9999_END: i64 = 253_402_300_799;
+
+        assert_eq!(
+            format_timestamp(YEAR_0_START),
+            "Sat, 1 Jan 0000 00:00:00 +0000"
+        );
+        assert_eq!(
+            format_timestamp(YEAR_9999_END),
+            "Fri, 31 Dec 9999 23:59:59 +0000"
+        );
+        assert_eq!(format_timestamp(YEAR_0_START - 1), "-62167219201");
+        assert_eq!(format_timestamp(YEAR_9999_END + 1), "253402300800");
+        assert_eq!(format_expiration_in_days(YEAR_0_START - 1), "-62167219201");
+        assert_eq!(format_expiration_in_days(YEAR_9999_END + 1), "253402300800");
     }
 
     #[test]
