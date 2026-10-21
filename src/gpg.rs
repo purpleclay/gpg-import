@@ -353,18 +353,27 @@ fn format_expiration_in_days(secs_since_epoch: i64) -> String {
     format!("{} ({})", expires_on.to_rfc2822(), days_text)
 }
 
-/// Extracts the fingerprint of the first successfully imported key from
-/// `--status-file` records (looks for an `IMPORT_OK` line), e.g.:
+/// Extracts the fingerprint of the first imported secret key from
+/// `--status-file` records: an `IMPORT_OK` line with flag bit 16 set, e.g.:
 ///
 /// ```text
 /// [GNUPG:] IMPORT_OK 17 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
 /// ```
+///
+/// gpg writes a public-key record (flags `1`, or `0` if already present)
+/// before the secret one, so every `IMPORT_OK` line is checked.
 fn parse_status_import(status: &str) -> Option<String> {
     status
         .lines()
-        .find_map(|line| line.strip_prefix("[GNUPG:] IMPORT_OK "))
-        .and_then(|rest| rest.split_whitespace().nth(1))
-        .map(String::from)
+        .filter_map(|line| line.strip_prefix("[GNUPG:] IMPORT_OK "))
+        .find_map(|rest| {
+            let mut fields = rest.split_whitespace();
+            let flags = fields.next()?.parse::<u32>().ok()?;
+            if flags & 16 == 0 {
+                return None;
+            }
+            fields.next().map(String::from)
+        })
 }
 
 /// Field indices (0-based, after splitting a colon-format line on `:`),
@@ -589,6 +598,12 @@ pub enum GpgError {
     #[error("malformed gpg colon record on line {0}: {1}")]
     MalformedKeyRecord(usize, String),
 
+    /// The imported key had no secret key material
+    #[error(
+        "the provided key contains no secret key material; export it with 'gpg --armor --export-secret-key <id>'"
+    )]
+    NoSecretKey,
+
     /// The specified key was not found in the keyring
     #[error("gpg key not found: {0}")]
     KeyNotFound(String),
@@ -697,7 +712,8 @@ pub fn import_secret_key(key: &str) -> Result<String> {
 
     match (succeeded, parse_status_import(&status_records)) {
         (true, Some(fingerprint)) => Ok(fingerprint),
-        _ => {
+        (true, None) => Err(GpgError::NoSecretKey.into()),
+        (false, _) => {
             let detail = stderr.trim();
             let detail = if detail.is_empty() {
                 status_records.trim()
@@ -831,6 +847,44 @@ mod tests {
 [GNUPG:] IMPORT_RES 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0";
 
         assert_eq!(parse_status_import(status), None);
+    }
+
+    #[test]
+    fn parse_status_import_returns_none_for_public_only_key() {
+        let status = "[GNUPG:] IMPORT_OK 1 294B469239FA3BAA8F3189C306DAA1368B5ABCC8
+[GNUPG:] IMPORT_RES 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0";
+
+        assert_eq!(parse_status_import(status), None);
+    }
+
+    #[test]
+    fn parse_status_import_returns_none_for_public_key_already_in_keyring() {
+        let status = "[GNUPG:] IMPORT_OK 0 294B469239FA3BAA8F3189C306DAA1368B5ABCC8
+[GNUPG:] IMPORT_RES 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0";
+
+        assert_eq!(parse_status_import(status), None);
+    }
+
+    #[test]
+    fn parse_status_import_finds_secret_record_after_public_one() {
+        let status = "[GNUPG:] IMPORT_OK 1 294B469239FA3BAA8F3189C306DAA1368B5ABCC8
+[GNUPG:] IMPORT_OK 17 294B469239FA3BAA8F3189C306DAA1368B5ABCC8";
+
+        assert_eq!(
+            parse_status_import(status),
+            Some("294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_status_import_accepts_secret_key_already_in_keyring() {
+        let status = "[GNUPG:] IMPORT_OK 0 294B469239FA3BAA8F3189C306DAA1368B5ABCC8
+[GNUPG:] IMPORT_OK 16 294B469239FA3BAA8F3189C306DAA1368B5ABCC8";
+
+        assert_eq!(
+            parse_status_import(status),
+            Some("294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string())
+        );
     }
 
     #[test]

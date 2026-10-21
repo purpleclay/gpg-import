@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), warn(clippy::unwrap_used))]
+
 /// Module containing git based utilities
 pub mod git;
 /// Module containing gpg based utilities

@@ -626,6 +626,28 @@ fn import_secret_key_valid_base64_invalid_gpg_data() {
 
 #[test]
 #[serial]
+fn import_secret_key_rejects_public_only_key() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    // Exported with `gpg --armor --export` from the no-passphrase.asc key
+    let result = gpg::import_secret_key(include_str!("testdata/public-only.asc"));
+
+    let err = result.unwrap_err();
+    let gpg_err = err.downcast_ref::<gpg::GpgError>().unwrap();
+    assert!(
+        matches!(gpg_err, gpg::GpgError::NoSecretKey),
+        "Expected NoSecretKey error, got: {}",
+        gpg_err
+    );
+    assert!(
+        gpg_err
+            .to_string()
+            .contains("gpg --armor --export-secret-key")
+    );
+}
+
+#[test]
+#[serial]
 fn import_secret_key_does_not_blame_the_key_when_gpg_cannot_start() {
     let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
     let empty_path = tempfile::TempDir::new().unwrap();
