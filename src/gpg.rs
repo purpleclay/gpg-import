@@ -336,7 +336,13 @@ fn format_expiration_in_days(secs_since_epoch: i64) -> String {
     let now = Utc::now();
     let days_until_expiry = (expires_on - now).num_days();
 
-    let days_text = if days_until_expiry == 1 {
+    let days_text = if expires_on <= now {
+        match -days_until_expiry {
+            0 => "expired today".to_string(),
+            1 => "expired 1 day ago".to_string(),
+            days => format!("expired {days} days ago"),
+        }
+    } else if days_until_expiry == 1 {
         "in 1 day".to_string()
     } else if days_until_expiry == 0 {
         "expires today".to_string()
@@ -1234,6 +1240,16 @@ grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:"
     fn format_out_of_range_timestamp_does_not_panic() {
         assert_eq!(format_timestamp(i64::MAX), i64::MAX.to_string());
         assert!(format_expiration_in_days(i64::MAX).starts_with(&i64::MAX.to_string()));
+    }
+
+    #[test]
+    fn format_expiration_in_days_marks_expired_dates() {
+        let ago =
+            |duration: Duration| format_expiration_in_days((Utc::now() - duration).timestamp());
+
+        assert!(ago(Duration::hours(1)).ends_with("(expired today)"));
+        assert!(ago(Duration::days(1) + Duration::hours(1)).ends_with("(expired 1 day ago)"));
+        assert!(ago(Duration::days(300) + Duration::hours(1)).ends_with("(expired 300 days ago)"));
     }
 
     #[test]
