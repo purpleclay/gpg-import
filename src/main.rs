@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), warn(clippy::unwrap_used))]
+
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum, builder::FalseyValueParser};
 use gpg_import::import::GpgImport;

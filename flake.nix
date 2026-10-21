@@ -78,7 +78,7 @@
           hooks = {
             typos = {
               enable = true;
-              entry = "${pkgs.typos}/bin/typos";
+              entry = "${pkgs.typos}/bin/typos --force-exclude";
             };
           };
         };
