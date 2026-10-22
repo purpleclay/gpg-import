@@ -5,15 +5,16 @@ use std::{
     process::{Command, Output},
 };
 
-/// Git GPG signing configuration that will written to the local
-/// .git/config of the repository
+/// Git GPG signing configuration, written to the repository's local config
+/// or, with `--git-global-config`, to the global config
 #[derive(Debug)]
 pub struct SigningConfig {
     /// User name associated with the signing key, maps to user.name
     pub user_name: String,
     /// User email associated with the signing key, maps to user.email
     pub user_email: String,
-    /// The shortform ID of the signing key, maps to user.signingKey
+    /// The signing key, maps to user.signingKey: the primary key ID, or
+    /// `<fingerprint>!` when a specific key or subkey was selected
     pub key_id: String,
     /// A flag to enable GPG signing of commits, maps to commit.gpgsign
     pub commit_sign: bool,
