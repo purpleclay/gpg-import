@@ -98,11 +98,16 @@ fn run(program: &str, args: &[&str], input: &[u8]) -> Result<Output> {
     // Check the exit status first: a process that exits early also breaks
     // the stdin pipe, and its stderr explains why
     if !output.status.success() {
+        // Fall back to stdout, e.g. `--status-fd 1` records, if stderr is empty
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = match stderr.trim() {
+            "" => String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            stderr => stderr.to_string(),
+        };
         bail!(GpgError::CommandFailed(
             program.to_string(),
             output.status.to_string(),
-            stderr.trim().to_string()
+            detail
         ));
     }
     written.map_err(|_| anyhow::anyhow!("stdin writer for {program} panicked"))??;
@@ -336,7 +341,7 @@ fn format_expiration_in_days(secs_since_epoch: i64) -> String {
 }
 
 /// Extracts the fingerprint of the first imported secret key from
-/// `--status-file` records: an `IMPORT_OK` line with flag bit 16 set, e.g.:
+/// `--status-fd` records: an `IMPORT_OK` line with flag bit 16 set, e.g.:
 ///
 /// ```text
 /// [GNUPG:] IMPORT_OK 17 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
@@ -603,6 +608,7 @@ pub enum GpgError {
     KeyCannotSign(String),
 
     /// A GPG process ran but exited non-zero: program, exit status, stderr
+    /// (or stdout if stderr was empty)
     #[error("{0} failed ({1}): {2}")]
     CommandFailed(String, String, String),
 }
@@ -644,25 +650,16 @@ fn decode_key_input(key: &str) -> Result<Vec<u8>> {
 pub fn preview_key(key: &str) -> Result<GpgPrivateKey> {
     let decoded = decode_key_input(key)?;
 
-    let temp_dir = tempfile::tempdir()?;
-    let key_path = temp_dir.path().join("key.asc");
-    fs::write(&key_path, &decoded)?;
-
-    let gpg_preview = gpg_command("gpg")
-        .args([
+    let gpg_preview = run_gpg_import(
+        &[
             "--import-options",
             "show-only",
             "--with-colons",
             "--with-keygrip",
             "--import",
-        ])
-        .arg(&key_path)
-        .output()?;
-
-    if !gpg_preview.status.success() {
-        let stderr = String::from_utf8_lossy(&gpg_preview.stderr);
-        bail!(GpgError::InvalidGpgKeyData(stderr.trim().to_string()));
-    }
+        ],
+        &decoded,
+    )?;
 
     let output = String::from_utf8(gpg_preview.stdout)?;
     let key_details = output.parse::<GpgPrivateKey>()?;
@@ -674,41 +671,25 @@ pub fn preview_key(key: &str) -> Result<GpgPrivateKey> {
 pub fn import_secret_key(key: &str) -> Result<String> {
     let decoded = decode_key_input(key)?;
 
-    let status_file = tempfile::NamedTempFile::new()?;
-    let status_path = status_file
-        .path()
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("status file path is not valid UTF-8"))?;
-
-    // Only gpg rejecting the key means the key is invalid. Failing to start
-    // gpg or talk to it is passed through unchanged
-    let (succeeded, stderr) = match run(
-        "gpg",
-        &["--status-file", status_path, "--import", "--batch", "--yes"],
+    // `gpg --import` writes nothing else to stdout, so it holds only the
+    // status records
+    let output = run_gpg_import(
+        &["--status-fd", "1", "--import", "--batch", "--yes"],
         &decoded,
-    ) {
-        Ok(output) => (true, String::from_utf8_lossy(&output.stderr).into_owned()),
-        Err(e) => match e.downcast::<GpgError>() {
-            Ok(GpgError::CommandFailed(_, _, stderr)) => (false, stderr),
-            Ok(other) => return Err(other.into()),
-            Err(e) => return Err(e),
-        },
-    };
-    let status_records = fs::read_to_string(status_file.path())?;
+    )?;
+    parse_status_import(&String::from_utf8_lossy(&output.stdout))
+        .ok_or_else(|| GpgError::NoSecretKey.into())
+}
 
-    match (succeeded, parse_status_import(&status_records)) {
-        (true, Some(fingerprint)) => Ok(fingerprint),
-        (true, None) => Err(GpgError::NoSecretKey.into()),
-        (false, _) => {
-            let detail = stderr.trim();
-            let detail = if detail.is_empty() {
-                status_records.trim()
-            } else {
-                detail
-            };
-            Err(GpgError::InvalidGpgKeyData(detail.to_string()).into())
-        }
-    }
+/// Runs a gpg import with the key on stdin. Only gpg rejecting the key means
+/// the key is invalid. Failing to start gpg or talk to it is passed through
+/// unchanged
+fn run_gpg_import(args: &[&str], key: &[u8]) -> Result<Output> {
+    run("gpg", args, key).map_err(|e| match e.downcast::<GpgError>() {
+        Ok(GpgError::CommandFailed(_, _, stderr)) => GpgError::InvalidGpgKeyData(stderr).into(),
+        Ok(other) => other.into(),
+        Err(e) => e,
+    })
 }
 
 /// Extracts internal details for a given GPG private key and verifies its validity
@@ -1411,6 +1392,18 @@ uid:u::::1700000000::1E9C7598797E7F7A380A72A58B9B7FA28160AB07::robin <robin@dc.c
     fn run_reports_stderr_on_non_zero_exit() {
         let err = run("sh", &["-c", "echo boom >&2; exit 3"], b"").unwrap_err();
         assert!(err.to_string().contains("boom"), "{err}");
+    }
+
+    #[test]
+    fn run_reports_stdout_when_stderr_is_empty() {
+        // e.g. `--status-fd 1` records are the only detail if gpg fails silently
+        let err = run(
+            "sh",
+            &["-c", "echo '[GNUPG:] FAILURE import 11'; exit 2"],
+            b"",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("FAILURE import 11"), "{err}");
     }
 
     #[test]
