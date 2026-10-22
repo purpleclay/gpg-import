@@ -19,6 +19,7 @@
 !scripts/*
 !src/*.rs
 !src/snapshots/*
+!tests/snapshots/*
 !tests/**/*.rs
 !tests/testdata/*
 !typos.toml

@@ -5,18 +5,21 @@
 [![MIT](https://img.shields.io/badge/MIT-gray?logo=github&logoColor=white)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/purpleclay/gpg-import/badge)](https://scorecard.dev/viewer/?uri=github.com/purpleclay/gpg-import)
 
-Import and configure GPG signing for git. Runs on Linux and MacOS.
+Import and configure GPG signing for git. Runs on Linux and macOS.
 
 > [!TIP]
 > Requires GnuPG (`gpg` and `gpg-connect-agent`) on your `$PATH`, and `git` for configuring signing. `git` isn't needed with `--skip-git`.
 
 ## Features
 
-- Import GPG keys in ASCII armored format (_optionally base64 encoded for CI environments_).
-- Configure local or global git signing settings.
-- Preset GPG agent passphrase for non-interactive signing.
+- Import GPG keys in ASCII armored format (_optionally base64 encoded for CI environments_) from an environment variable, stdin or a file.
+- Read the passphrase from an environment variable, stdin or a file, keeping it off the command line.
+- Preset the passphrase in the GPG agent for the primary key and every subkey, for non-interactive signing.
+- Configure local or global git signing for commits, tags and pushes.
+- Select a specific key or subkey for signing by fingerprint. GPG then signs with exactly that key, not the newest signing subkey.
 - Set key trust level.
-- Select a specific key or subkey for signing via fingerprint.
+- Refuse an expired primary key or selected subkey, and flag unused expired subkeys in the output.
+- Create `gpg.conf` and `gpg-agent.conf` with defaults for non-interactive signing, without overwriting existing ones.
 - Override committer identity independently from the GPG key.
 - Dry-run mode to preview changes without applying them.
 
@@ -28,11 +31,11 @@ To install the latest version using a bash script:
 sh -c "$(curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install.sh)"
 ```
 
-Download a specific version using the `-v` flag. The script uses `sudo` by default but can be disabled through the `--no-sudo` flag. You can also provide a different installation directory from the default `/usr/local/bin` by using the `-d` flag:
+To install a specific version, into another directory or without `sudo`, see the installer's options:
 
 ```sh
 sh -c "$(curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install.sh)" \
-  -- -v 0.3.0 --no-sudo -d ./bin
+  -- --help
 ```
 
 ## Run with Nix
@@ -43,7 +46,7 @@ If you have nix installed, you can run the binary directly from the GitHub repos
 nix run github:purpleclay/gpg-import -- --help
 ```
 
-## Prerequisites
+## Preparing your GPG key
 
 [Generate](https://docs.github.com/en/authentication/managing-commit-signature-verification/generating-a-new-gpg-key) a GPG key and export it as an ASCII armored private key:
 
@@ -56,6 +59,8 @@ For CI environments that don't handle multiline secrets well, you can base64 enc
 ```sh
 gpg --armor --export-secret-key batman@dc.com | base64
 ```
+
+`base64` wraps its output at 76 columns by default. Wrapped input is accepted, so there is no need for `-w 0`.
 
 ## Quick Start
 
@@ -94,105 +99,11 @@ trust_level: 5 [EF48BE1DFBFA8BA5]
 > Git config set (local):
 user.name:       batman
 user.email:      batman@dc.com
-user.signingKey: AE799E2DEB4AFE11
+user.signingKey: EF48BE1DFBFA8BA5
 commit.gpgsign:  true
 tag.gpgsign:     true
 push.gpgsign:    if-asked
 ```
 
-If the GnuPG home directory has no `gpg.conf` or `gpg-agent.conf`, `gpg-import` creates them with defaults for non-interactive signing: loopback pinentry, preset passphrases, and a passphrase cache of up to a year. A file that already exists is never changed, so running it on a workstation leaves your own GnuPG configuration alone. To preset a passphrase, your `gpg-agent.conf` must then contain `allow-preset-passphrase`.
-
-## Configuration
-
-All options can be set via CLI flags or environment variables:
-
-| Flag                    | Environment Variable      | Description                                                        |
-| ----------------------- | ------------------------- | ------------------------------------------------------------------ |
-| `-k, --key`             | `GPG_PRIVATE_KEY`         | GPG private key (use `-` for stdin or `@path` for file)            |
-| `-p, --passphrase`      | `GPG_PASSPHRASE`          | Passphrase for the GPG key (use `-` for stdin or `@path` for file) |
-| `-f, --fingerprint`     | `GPG_FINGERPRINT`         | Fingerprint of a specific key or subkey to use for signing         |
-| `-t, --trust-level`     | `GPG_TRUST_LEVEL`         | Trust level for the key (1-5)                                      |
-| `-s, --skip-git`        | `GPG_SKIP_GIT`            | Skip git configuration                                             |
-| `--git-global-config`   | `GPG_GIT_GLOBAL_CONFIG`   | Apply git config globally instead of locally                       |
-| `--git-committer-name`  | `GPG_GIT_COMMITTER_NAME`  | Override committer name                                            |
-| `--git-committer-email` | `GPG_GIT_COMMITTER_EMAIL` | Override committer email                                           |
-| `--dry-run`             | `GPG_DRY_RUN`             | Preview changes without applying them                              |
-
-### Trust Levels
-
-| Level | Description               |
-| ----- | ------------------------- |
-| 1     | I don't know or won't say |
-| 2     | I do NOT trust            |
-| 3     | I trust marginally        |
-| 4     | I trust fully             |
-| 5     | I trust ultimately        |
-
-## Examples
-
-### Basic import with passphrase
-
-```sh
-gpg-import --key "$GPG_PRIVATE_KEY" --passphrase "$GPG_PASSPHRASE"
-```
-
-### Import from stdin
-
-Pipe a key directly from GPG:
-
-```sh
-gpg --armor --export-secret-key batman@dc.com | gpg-import --key -
-```
-
-### Import from file
-
-Read a key from a file:
-
-```sh
-gpg-import --key @/path/to/private.key
-```
-
-### Read the passphrase from a file or stdin
-
-A passphrase given with `--passphrase` is visible to other processes on the machine (e.g. through `ps`). Reading it from a file or stdin keeps it out of the process list. Both examples take the key from `GPG_PRIVATE_KEY`:
-
-```sh
-gpg-import --passphrase @/path/to/passphrase
-printf '%s' "$GPG_PASSPHRASE" | gpg-import --passphrase -
-```
-
-`--key` and `--passphrase` can't both read from stdin, so use `@path` for one of them.
-
-### Global git configuration
-
-Apply signing configuration to your global git config instead of the local repository:
-
-```sh
-gpg-import --key "$GPG_PRIVATE_KEY" --git-global-config
-```
-
-### Using a specific subkey
-
-Select a specific subkey for signing by its fingerprint:
-
-```sh
-gpg-import --key "$GPG_PRIVATE_KEY" --fingerprint "A6780D53C3236724F960FD8AC07848F38C66CF48"
-```
-
-### Override committer identity
-
-Use a different committer identity than the one in the GPG key:
-
-```sh
-gpg-import --key "$GPG_PRIVATE_KEY" \
-  --git-committer-name "Bruce Wayne" \
-  --git-committer-email "bruce@wayne.enterprises"
-```
-
-### Dry run
-
-Preview what would happen without making any changes:
-
-```sh
-gpg-import --key "$GPG_PRIVATE_KEY" --dry-run
-```
+> [!TIP]
+> On a workstation, your existing `gpg.conf` and `gpg-agent.conf` are left alone. To preset a passphrase, your `gpg-agent.conf` must contain `allow-preset-passphrase`.

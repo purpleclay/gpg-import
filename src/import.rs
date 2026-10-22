@@ -16,7 +16,8 @@ pub struct GpgImport {
 }
 
 impl GpgImport {
-    /// Create a new GPG import with the given base64-encoded key.
+    /// Create a new GPG import with the given ASCII armored key, which may
+    /// also be base64 encoded.
     pub fn new(key: String) -> Self {
         Self {
             key,
@@ -82,7 +83,7 @@ impl GpgImport {
     /// Execute the GPG import.
     pub fn import(self) -> Result<()> {
         if self.dry_run {
-            println!("No changes will be made will running in dry-run mode\n");
+            println!("No changes will be made while running in dry-run mode\n");
         }
 
         let info = gpg::detect_version()?;
@@ -240,16 +241,17 @@ impl GpgImport {
     }
 
     fn apply_git_config(&self, cfg: &git::SigningConfig) -> Result<()> {
+        let action = if self.dry_run { "would be set" } else { "set" };
         if self.git_global_config {
             if !self.dry_run {
                 git::configure_signing_global(cfg)?;
             }
-            println!("\n> Git config set (global):");
+            println!("\n> Git config {action} (global):");
         } else {
             if !self.dry_run {
                 git::configure_signing(cfg)?;
             }
-            println!("\n> Git config set (local):");
+            println!("\n> Git config {action} (local):");
         }
 
         Ok(())

@@ -10,14 +10,25 @@ const PASSPHRASE_KEY: &str = concat!(
     "/tests/testdata/passphrase.base64.key"
 );
 
+/// Builds a command for the binary without any GPG_* option variables from
+/// the developer's environment, which would otherwise change its behaviour.
+/// GNUPGHOME is kept, so the fixture's keyring is still used
+fn gpg_import_command() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_gpg-import"));
+    for (name, _) in std::env::vars_os() {
+        if name.to_string_lossy().starts_with("GPG_") {
+            cmd.env_remove(name);
+        }
+    }
+    cmd
+}
+
 /// Runs the binary against the fixture's GNUPGHOME (inherited from the
 /// process environment), feeding `stdin` to it
 fn gpg_import(args: &[&str], stdin: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_gpg-import"))
+    let mut child = gpg_import_command()
         .args(args)
         .args(["--skip-git"])
-        .env_remove("GPG_PRIVATE_KEY")
-        .env_remove("GPG_PASSPHRASE")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -87,4 +98,69 @@ fn key_and_passphrase_cannot_both_read_stdin() {
         stderr.contains("--key and --passphrase cannot both read from stdin"),
         "unexpected error: {stderr}"
     );
+}
+
+#[test]
+#[serial]
+fn dry_run_reports_what_would_change() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    // Not through gpg_import, which adds --skip-git. A dry run never writes
+    // git config, so --git-global-config is safe here
+    let key = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/testdata/no-passphrase.asc"
+    );
+    let output = gpg_import_command()
+        .args([
+            "--dry-run",
+            "--git-global-config",
+            "--key",
+            &format!("@{key}"),
+        ])
+        .output()
+        .expect("Failed to run gpg-import");
+
+    assert!(
+        output.status.success(),
+        "gpg-import failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("No changes will be made while running in dry-run mode"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("> Git config would be set (global):"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn help_does_not_print_secret_env_values() {
+    let output = Command::new(env!("CARGO_BIN_EXE_gpg-import"))
+        .arg("--help")
+        .env("GPG_PRIVATE_KEY", "secret-key-value")
+        .env("GPG_PASSPHRASE", "secret-passphrase-value")
+        .output()
+        .expect("Failed to run gpg-import");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("GPG_PRIVATE_KEY"), "{stdout}");
+    assert!(!stdout.contains("secret-key-value"), "{stdout}");
+    assert!(!stdout.contains("secret-passphrase-value"), "{stdout}");
+}
+
+#[test]
+fn help_output() {
+    // A clean environment, so no GPG_* variable shows up in the snapshot
+    let output = Command::new(env!("CARGO_BIN_EXE_gpg-import"))
+        .arg("--help")
+        .env_clear()
+        .output()
+        .expect("Failed to run gpg-import");
+
+    assert!(output.status.success());
+    insta::assert_snapshot!(String::from_utf8_lossy(&output.stdout));
 }

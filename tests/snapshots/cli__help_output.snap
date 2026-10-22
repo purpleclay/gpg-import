@@ -1,0 +1,93 @@
+---
+source: tests/cli.rs
+expression: "String::from_utf8_lossy(&output.stdout)"
+---
+Import and configure GPG signing for git
+
+Usage: gpg-import [OPTIONS] [COMMAND]
+
+Examples:
+  # Import the key in GPG_PRIVATE_KEY and preset the passphrase in GPG_PASSPHRASE
+  $ gpg-import
+
+  # Pipe a key straight from gpg
+  $ gpg --armor --export-secret-key batman@dc.com | gpg-import --key -
+
+  # Read the key and passphrase from files (only one of them can read stdin)
+  $ gpg-import --key @/path/to/private.key --passphrase @/path/to/passphrase
+
+  # Configure git globally instead of the current repository
+  $ gpg-import --git-global-config
+
+  # Sign with a specific subkey. List fingerprints with
+  # `gpg --list-secret-keys --with-subkey-fingerprints` and pick one marked [S]
+  $ gpg-import --fingerprint "$SUBKEY_FINGERPRINT"
+
+  # Use a different committer identity from the one in the key
+  $ gpg-import --git-committer-name "Bruce Wayne" --git-committer-email "bruce@wayne.enterprises"
+
+  # Preview the import without changing anything
+  $ gpg-import --dry-run
+
+Commands:
+  version  Print build time version information
+
+Options:
+  -k, --key <GPG_KEY>
+          An ASCII armored GPG private key (optionally base64 encoded). Use - for stdin or @path to read from a file
+          
+          Don't pass the key itself as the value: an armored key starts with -----BEGIN, which is read as an option, and the key would be visible to other processes. Use GPG_PRIVATE_KEY, - or @path instead
+          
+          [env: GPG_PRIVATE_KEY]
+
+  -p, --passphrase <PASSPHRASE>
+          The passphrase of the GPG private key if set. Use - for stdin or @path to read from a file
+          
+          A passphrase given directly is visible to other processes, e.g. through ps. Use GPG_PASSPHRASE, - or @path instead
+          
+          [env: GPG_PASSPHRASE]
+
+  -f, --fingerprint <FINGERPRINT>
+          The fingerprint of a specific key or subkey to use for signing
+          
+          [env: GPG_FINGERPRINT=]
+
+  -t, --trust-level <TRUST_LEVEL>
+          A level of trust to associate with the GPG private key
+
+          Possible values:
+          - 1: I don't know or won't say
+          - 2: I do NOT trust
+          - 3: I trust marginally
+          - 4: I trust fully
+          - 5: I trust ultimately
+          
+          [env: GPG_TRUST_LEVEL=]
+
+  -s, --skip-git
+          Skip all GPG configuration for the detected git repository
+          
+          [env: GPG_SKIP_GIT=]
+
+      --git-global-config
+          Apply git signing configuration globally
+          
+          [env: GPG_GIT_GLOBAL_CONFIG=]
+
+      --git-committer-name <NAME>
+          Override the committer name instead of using the value from the GPG key
+          
+          [env: GPG_GIT_COMMITTER_NAME=]
+
+      --git-committer-email <EMAIL>
+          Override the committer email instead of using the value from the GPG key
+          
+          [env: GPG_GIT_COMMITTER_EMAIL=]
+
+      --dry-run
+          Simulate the import without making changes
+          
+          [env: GPG_DRY_RUN=]
+
+  -h, --help
+          Print help (see a summary with '-h')

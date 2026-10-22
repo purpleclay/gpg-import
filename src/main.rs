@@ -1,25 +1,78 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use anyhow::Result;
-use clap::{Parser, Subcommand, ValueEnum, builder::FalseyValueParser};
+use clap::{
+    Parser, Subcommand, ValueEnum,
+    builder::{FalseyValueParser, styling::Styles},
+};
 use gpg_import::import::GpgImport;
 use std::io::Read;
-use std::println;
+
+const EXAMPLES: &str = "  # Import the key in GPG_PRIVATE_KEY and preset the passphrase in GPG_PASSPHRASE
+  $ gpg-import
+
+  # Pipe a key straight from gpg
+  $ gpg --armor --export-secret-key batman@dc.com | gpg-import --key -
+
+  # Read the key and passphrase from files (only one of them can read stdin)
+  $ gpg-import --key @/path/to/private.key --passphrase @/path/to/passphrase
+
+  # Configure git globally instead of the current repository
+  $ gpg-import --git-global-config
+
+  # Sign with a specific subkey. List fingerprints with
+  # `gpg --list-secret-keys --with-subkey-fingerprints` and pick one marked [S]
+  $ gpg-import --fingerprint \"$SUBKEY_FINGERPRINT\"
+
+  # Use a different committer identity from the one in the key
+  $ gpg-import --git-committer-name \"Bruce Wayne\" --git-committer-email \"bruce@wayne.enterprises\"
+
+  # Preview the import without changing anything
+  $ gpg-import --dry-run";
+
+/// Places the examples straight after the usage line, as Cobra does. clap
+/// writes two newlines before `{after-help}`, and omits it for `-h`, which
+/// then keeps clap's default layout
+const HELP_TEMPLATE: &str = "\
+{before-help}{about-with-newline}
+{usage-heading} {usage}{after-help}
+
+{all-args}";
+
+/// The examples, under a heading styled like clap's own (bold, underlined)
+fn examples() -> String {
+    let styles = Styles::styled();
+    let header = styles.get_header();
+    format!("{header}Examples:{header:#}\n{EXAMPLES}")
+}
 
 #[derive(Parser, Debug)]
-#[command(author, about, long_about = None, disable_version_flag = true, disable_help_subcommand = true)]
+#[command(author, about, long_about = None, help_template = HELP_TEMPLATE, after_long_help = examples(), disable_version_flag = true, disable_help_subcommand = true)]
 struct Args {
     #[command(subcommand)]
     command: Option<Commands>,
 
     /// An ASCII armored GPG private key (optionally base64 encoded). Use - for
     /// stdin or @path to read from a file
-    #[arg(short, long, env = "GPG_PRIVATE_KEY", value_name = "GPG_KEY")]
+    ///
+    /// Don't pass the key itself as the value: an armored key starts with
+    /// -----BEGIN, which is read as an option, and the key would be visible
+    /// to other processes. Use GPG_PRIVATE_KEY, - or @path instead
+    #[arg(
+        short,
+        long,
+        env = "GPG_PRIVATE_KEY",
+        value_name = "GPG_KEY",
+        hide_env_values = true
+    )]
     key: Option<String>,
 
     /// The passphrase of the GPG private key if set. Use - for stdin or @path
     /// to read from a file
-    #[arg(short, long, env = "GPG_PASSPHRASE")]
+    ///
+    /// A passphrase given directly is visible to other processes, e.g.
+    /// through ps. Use GPG_PASSPHRASE, - or @path instead
+    #[arg(short, long, env = "GPG_PASSPHRASE", hide_env_values = true)]
     passphrase: Option<String>,
 
     /// The fingerprint of a specific key or subkey to use for signing
