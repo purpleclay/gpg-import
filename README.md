@@ -80,6 +80,10 @@ sub_key_id:     008183F9F50359D1
 sub_created_on: Wed, 11 Jun 2025 04:36:06 +0000
 sub_expires_on: Fri, 11 Jul 2025 04:36:59 +0000 (in 29 days)
 
+> GPG config:
+gpg.conf:       written
+gpg-agent.conf: written
+
 > Setting Passphrase:
 keygrip: 99A0B6DD933CC25D0DC8D36299B4F51A9E3DD8C9 [EF48BE1DFBFA8BA5]
 keygrip: A6780D53C3236724F960FD8AC07848F38C66CF48 [008183F9F50359D1]
@@ -96,21 +100,23 @@ tag.gpgsign:     true
 push.gpgsign:    if-asked
 ```
 
+If the GnuPG home directory has no `gpg.conf` or `gpg-agent.conf`, `gpg-import` creates them with defaults for non-interactive signing: loopback pinentry, preset passphrases, and a passphrase cache of up to a year. A file that already exists is never changed, so running it on a workstation leaves your own GnuPG configuration alone. To preset a passphrase, your `gpg-agent.conf` must then contain `allow-preset-passphrase`.
+
 ## Configuration
 
 All options can be set via CLI flags or environment variables:
 
-| Flag                    | Environment Variable      | Description                                                |
-| ----------------------- | ------------------------- | ---------------------------------------------------------- |
-| `-k, --key`             | `GPG_PRIVATE_KEY`         | GPG private key (use `-` for stdin or `@path` for file) |
+| Flag                    | Environment Variable      | Description                                                        |
+| ----------------------- | ------------------------- | ------------------------------------------------------------------ |
+| `-k, --key`             | `GPG_PRIVATE_KEY`         | GPG private key (use `-` for stdin or `@path` for file)            |
 | `-p, --passphrase`      | `GPG_PASSPHRASE`          | Passphrase for the GPG key (use `-` for stdin or `@path` for file) |
-| `-f, --fingerprint`     | `GPG_FINGERPRINT`         | Fingerprint of a specific key or subkey to use for signing |
-| `-t, --trust-level`     | `GPG_TRUST_LEVEL`         | Trust level for the key (1-5)                              |
-| `-s, --skip-git`        | `GPG_SKIP_GIT`            | Skip git configuration                                     |
-| `--git-global-config`   | `GPG_GIT_GLOBAL_CONFIG`   | Apply git config globally instead of locally               |
-| `--git-committer-name`  | `GPG_GIT_COMMITTER_NAME`  | Override committer name                                    |
-| `--git-committer-email` | `GPG_GIT_COMMITTER_EMAIL` | Override committer email                                   |
-| `--dry-run`             | `GPG_DRY_RUN`             | Preview changes without applying them                      |
+| `-f, --fingerprint`     | `GPG_FINGERPRINT`         | Fingerprint of a specific key or subkey to use for signing         |
+| `-t, --trust-level`     | `GPG_TRUST_LEVEL`         | Trust level for the key (1-5)                                      |
+| `-s, --skip-git`        | `GPG_SKIP_GIT`            | Skip git configuration                                             |
+| `--git-global-config`   | `GPG_GIT_GLOBAL_CONFIG`   | Apply git config globally instead of locally                       |
+| `--git-committer-name`  | `GPG_GIT_COMMITTER_NAME`  | Override committer name                                            |
+| `--git-committer-email` | `GPG_GIT_COMMITTER_EMAIL` | Override committer email                                           |
+| `--dry-run`             | `GPG_DRY_RUN`             | Preview changes without applying them                              |
 
 ### Trust Levels
 

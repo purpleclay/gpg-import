@@ -109,8 +109,19 @@ impl GpgImport {
         println!("{private_key}");
 
         if !self.dry_run {
-            gpg::configure_defaults(&info.home_dir)?;
-            gpg::configure_agent_defaults(&info.home_dir)?;
+            let gpg_conf = gpg::configure_defaults(&info.home_dir)?;
+            let agent_conf = gpg::configure_agent_defaults(&info.home_dir)?;
+
+            let status = |written| {
+                if written {
+                    "written"
+                } else {
+                    "already exists, left untouched"
+                }
+            };
+            println!("> GPG config:");
+            println!("gpg.conf:       {}", status(gpg_conf));
+            println!("gpg-agent.conf: {}\n", status(agent_conf));
         }
 
         Ok(private_key)

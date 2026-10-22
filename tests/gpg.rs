@@ -248,6 +248,10 @@ fn preset_passphrase_fails_when_agent_disallows_preset() {
         err.to_string().contains("Not supported"),
         "error should carry the agent's response: {err}"
     );
+    assert!(
+        err.to_string().contains("allow-preset-passphrase"),
+        "error should name the missing directive: {err}"
+    );
 }
 
 #[test]
