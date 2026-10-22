@@ -1,14 +1,6 @@
 use anyhow::{Result, bail};
 use base64::{DecodeError, Engine as _, engine::general_purpose};
 use chrono::{DateTime, Datelike, Utc};
-use nom::{
-    AsChar, Finish, IResult, Parser,
-    branch::alt,
-    bytes::complete::{tag, take_until},
-    character::complete::not_line_ending,
-    error::Error,
-    sequence::separated_pair,
-};
 use std::{
     fmt::{self, Display},
     fs,
@@ -31,16 +23,10 @@ pub struct GpgInfo {
 }
 
 impl FromStr for GpgInfo {
-    type Err = Error<String>;
+    type Err = GpgError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match parse_gpg_info(s).finish() {
-            Ok((_, info)) => Ok(info),
-            Err(Error { input, code }) => Err(Error {
-                input: input.to_string(),
-                code,
-            }),
-        }
+        parse_gpg_info(s).ok_or_else(|| GpgError::UnrecognisedVersionOutput(s.to_string()))
     }
 }
 
@@ -56,30 +42,26 @@ impl Display for GpgInfo {
     }
 }
 
-fn parse_gpg_info(input: &str) -> IResult<&str, GpgInfo> {
-    let (i, version) = separated_pair(
-        separated_pair(
-            tag("gpg"),
-            tag(" "),
-            alt((tag("(GnuPG)"), tag("(GnuPG/MacGPG2)"))),
-        ),
-        tag(" "),
-        not_line_ending,
-    )
-    .parse(input)?;
-    let (i, _) = take_until("libgcrypt")(i)?;
-    let (i, libgcrypt) = separated_pair(tag("libgcrypt"), tag(" "), not_line_ending).parse(i)?;
-    let (i, _) = take_until("Home: ")(i)?;
-    let (i, home_dir) = separated_pair(tag("Home:"), tag(" "), not_line_ending).parse(i)?;
+/// Parses the `gpg --version` header, e.g.:
+///
+/// ```text
+/// gpg (GnuPG) 2.4.5
+/// libgcrypt 1.10.3
+/// ...
+/// Home: /home/user/.gnupg
+/// ```
+fn parse_gpg_info(input: &str) -> Option<GpgInfo> {
+    let first_line = input.lines().next()?;
+    let version = first_line
+        .strip_prefix("gpg (GnuPG) ")
+        .or_else(|| first_line.strip_prefix("gpg (GnuPG/MacGPG2) "))?;
+    let value_of = |prefix: &str| input.lines().find_map(|line| line.strip_prefix(prefix));
 
-    Ok((
-        i,
-        GpgInfo {
-            version: version.1.into(),
-            libgcrypt: libgcrypt.1.into(),
-            home_dir: home_dir.1.into(),
-        },
-    ))
+    Some(GpgInfo {
+        version: version.to_string(),
+        libgcrypt: value_of("libgcrypt ")?.to_string(),
+        home_dir: value_of("Home: ")?.to_string(),
+    })
 }
 
 /// Builds a `Command` for the given GPG binary, pinned to the `C` locale so
@@ -604,6 +586,10 @@ pub enum GpgError {
     )]
     NoSecretKey,
 
+    /// `gpg --version` output did not have the expected header
+    #[error("unrecognised gpg --version output: {0}")]
+    UnrecognisedVersionOutput(String),
+
     /// The specified key was not found in the keyring
     #[error("gpg key not found: {0}")]
     KeyNotFound(String),
@@ -646,7 +632,7 @@ fn decode_key_input(key: &str) -> Result<Vec<u8>> {
             DecodeError::InvalidByte(offset, byte) => {
                 // Report the position within the key as supplied, not the stripped copy.
                 let position = non_whitespace().nth(offset).map_or(offset, |(i, _)| i);
-                bail!(GpgError::InvalidByteInGpgKey(position, byte.as_char()))
+                bail!(GpgError::InvalidByteInGpgKey(position, char::from(byte)))
             }
             _ => Err(e.into()),
         },
@@ -772,7 +758,10 @@ pub fn preset_passphrase(keygrip: &str, passphrase: &str) -> Result<()> {
         &format!(
             "PRESET_PASSPHRASE {} -1 {}",
             keygrip,
-            hex::encode(passphrase).to_uppercase()
+            passphrase
+                .bytes()
+                .map(|b| format!("{b:02X}"))
+                .collect::<String>()
         ),
     )
 }
@@ -912,6 +901,35 @@ Pubkey: RSA, ELG, DSA, ECDH, ECDSA, EDDSA";
         assert_eq!(info.version, "2.4.5");
         assert_eq!(info.libgcrypt, "1.10.3");
         assert_eq!(info.home_dir, "/home/user/.gnupg");
+    }
+
+    #[test]
+    fn parse_macgpg2_version_output() {
+        let gpg_output = "gpg (GnuPG/MacGPG2) 2.2.41
+libgcrypt 1.8.10
+Copyright (C) 2022 g10 Code GmbH
+
+Home: /Users/user/.gnupg";
+
+        let info = gpg_output.parse::<GpgInfo>().unwrap();
+        assert_eq!(info.version, "2.2.41");
+        assert_eq!(info.libgcrypt, "1.8.10");
+        assert_eq!(info.home_dir, "/Users/user/.gnupg");
+    }
+
+    #[test]
+    fn parse_unrecognised_version_output_fails() {
+        for output in [
+            "",
+            "gpg (Unknown) 2.4.5\nlibgcrypt 1.10.3\nHome: /home/user/.gnupg",
+            "gpg (GnuPG) 2.4.5\nHome: /home/user/.gnupg",
+            "gpg (GnuPG) 2.4.5\nlibgcrypt 1.10.3",
+        ] {
+            assert!(
+                output.parse::<GpgInfo>().is_err(),
+                "Should reject: {output:?}"
+            );
+        }
     }
 
     #[test]

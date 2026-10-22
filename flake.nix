@@ -61,15 +61,12 @@
             gnupg
             libfaketime
             nil
-            openssl
             prettier
             zizmor
-            zlib
           ];
 
-        nativeBuildInputs = with pkgs; [
+        nativeBuildInputs = [
           rustToolchain
-          pkg-config
         ];
 
         pre-commit-check = git-hooks.lib.${system}.run {

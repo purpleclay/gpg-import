@@ -1,7 +1,6 @@
 use crate::{git, gpg};
 use anyhow::{Result, bail};
 use chrono::Utc;
-use git2::Repository;
 
 /// A builder for importing GPG keys with optional configuration.
 pub struct GpgImport {
@@ -166,8 +165,7 @@ impl GpgImport {
             return Ok(());
         }
 
-        let repo = git::is_repo();
-        if !self.git_global_config && repo.is_none() {
+        if !self.git_global_config && !git::is_repo()? {
             return Ok(());
         }
 
@@ -193,7 +191,7 @@ impl GpgImport {
             push_sign: true,
         };
 
-        self.apply_git_config(&git_cfg, repo.as_ref())?;
+        self.apply_git_config(&git_cfg)?;
         println!("{git_cfg}");
 
         Ok(())
@@ -230,15 +228,15 @@ impl GpgImport {
         Ok(format!("{fp}!"))
     }
 
-    fn apply_git_config(&self, cfg: &git::SigningConfig, repo: Option<&Repository>) -> Result<()> {
+    fn apply_git_config(&self, cfg: &git::SigningConfig) -> Result<()> {
         if self.git_global_config {
             if !self.dry_run {
                 git::configure_signing_global(cfg)?;
             }
             println!("\n> Git config set (global):");
-        } else if let Some(repo) = repo {
+        } else {
             if !self.dry_run {
-                git::configure_signing(repo, cfg)?;
+                git::configure_signing(cfg)?;
             }
             println!("\n> Git config set (local):");
         }
@@ -256,8 +254,8 @@ mod tests {
     use tempfile::TempDir;
 
     /// Temporarily changes the process's current directory, restoring it
-    /// when dropped. `git::is_repo` resolves the repo via
-    /// `Repository::open(".")`, so tests exercising git configuration need
+    /// when dropped. `git::is_repo` resolves the repo from
+    /// the current directory, so tests exercising git configuration need
     /// to point the process at a throwaway repo instead of this project's
     /// own checkout.
     struct CwdGuard {
@@ -304,7 +302,7 @@ mod tests {
     #[serial]
     fn configure_git_signing_bails_when_primary_uid_has_no_email() {
         let repo_dir = TempDir::new().unwrap();
-        Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+        git_init(repo_dir.path());
         let _cwd_guard =
             CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
 
@@ -322,7 +320,7 @@ mod tests {
     #[serial]
     fn configure_git_signing_accepts_committer_email_override_for_name_only_uid() {
         let repo_dir = TempDir::new().unwrap();
-        Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+        git_init(repo_dir.path());
         let _cwd_guard =
             CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
 
@@ -337,9 +335,68 @@ mod tests {
             result.err()
         );
 
-        let repo = Repository::open(repo_dir.path()).expect("Failed to reopen throwaway repo");
-        let config = repo.config().expect("Failed to read throwaway repo config");
-        assert_eq!(config.get_string("user.email").unwrap(), "batman@dc.com");
+        assert_eq!(
+            git_config_get(repo_dir.path(), "user.email"),
+            "batman@dc.com"
+        );
+    }
+
+    fn git_init(dir: &Path) {
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .arg(dir)
+            .status()
+            .expect("Failed to run git init");
+        assert!(status.success(), "Failed to init throwaway git repo");
+    }
+
+    fn git_config_get(dir: &Path, key: &str) -> String {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["config", "--local", "--get", key])
+            .output()
+            .expect("Failed to run git config");
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    #[test]
+    #[serial]
+    fn configure_git_signing_finds_repo_from_subdirectory() {
+        let repo_dir = TempDir::new().unwrap();
+        git_init(repo_dir.path());
+        let sub_dir = repo_dir.path().join("nested/deeper");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+        let _cwd_guard = CwdGuard::change_to(&sub_dir).expect("Failed to change into subdirectory");
+
+        let key = key_with_uid_email("batman@dc.com");
+        let import = GpgImport::new("irrelevant".to_string());
+
+        let result = import.configure_git_signing(&key);
+        assert!(
+            result.is_ok(),
+            "configure_git_signing failed: {:?}",
+            result.err()
+        );
+        assert_eq!(
+            git_config_get(repo_dir.path(), "user.email"),
+            "batman@dc.com"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn is_repo_only_inside_a_repository() {
+        let outside = TempDir::new().unwrap();
+        let inside = TempDir::new().unwrap();
+        git_init(inside.path());
+
+        let guard = CwdGuard::change_to(outside.path()).unwrap();
+        assert!(!git::is_repo().unwrap(), "A plain directory is not a repo");
+        drop(guard);
+
+        let _guard = CwdGuard::change_to(inside.path()).unwrap();
+        assert!(git::is_repo().unwrap(), "A git init directory is a repo");
     }
 
     fn key_with_expiring_subkeys(subkeys: &[(&str, Option<i64>)]) -> GpgPrivateKey {
@@ -382,7 +439,7 @@ mod tests {
     #[serial]
     fn configure_git_signing_rejects_expired_selected_subkey() {
         let repo_dir = TempDir::new().unwrap();
-        Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+        git_init(repo_dir.path());
         let _cwd_guard =
             CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
 
@@ -405,7 +462,7 @@ mod tests {
     #[serial]
     fn configure_git_signing_ignores_expired_unselected_subkey() {
         let repo_dir = TempDir::new().unwrap();
-        Repository::init(repo_dir.path()).expect("Failed to init throwaway git repo");
+        git_init(repo_dir.path());
         let _cwd_guard =
             CwdGuard::change_to(repo_dir.path()).expect("Failed to change into throwaway repo");
 
