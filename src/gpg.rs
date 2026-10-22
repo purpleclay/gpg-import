@@ -126,30 +126,68 @@ pub fn detect_version() -> Result<GpgInfo> {
     Ok(gpg_info)
 }
 
-/// Configure GPG with sensible defaults
-pub fn configure_defaults(home_dir: &str) -> Result<()> {
-    let path = Path::new(home_dir).join("gpg.conf");
-    fs::create_dir_all(home_dir)?;
-    fs::write(
-        path,
+/// Configure GPG with sensible defaults, unless `gpg.conf` already exists.
+/// Returns whether the file was written
+pub fn configure_defaults(home_dir: &str) -> Result<bool> {
+    write_if_missing(
+        home_dir,
+        "gpg.conf",
         b"use-agent
 pinentry-mode loopback",
-    )?;
-    Ok(())
+    )
 }
 
-/// Configure the GPG agent with sensible defaults
-pub fn configure_agent_defaults(home_dir: &str) -> Result<()> {
-    let path = Path::new(home_dir).join("gpg-agent.conf");
-    fs::create_dir_all(home_dir)?;
-    fs::write(
-        path,
+/// Configure the GPG agent with sensible defaults, unless `gpg-agent.conf`
+/// already exists. Returns whether the file was written
+pub fn configure_agent_defaults(home_dir: &str) -> Result<bool> {
+    let written = write_if_missing(
+        home_dir,
+        "gpg-agent.conf",
         b"default-cache-ttl 21600
 max-cache-ttl 31536000
 allow-preset-passphrase
 allow-loopback-pinentry",
     )?;
-    reload_agent(home_dir)
+    // Reloading also clears the agent's passphrase cache, so leave an agent
+    // running with the user's own config alone
+    if written {
+        reload_agent(home_dir)?;
+    }
+    Ok(written)
+}
+
+/// Writes a config file only if it does not exist, so a user's own GPG
+/// configuration is never overwritten
+fn write_if_missing(home_dir: &str, name: &str, contents: &[u8]) -> Result<bool> {
+    fs::create_dir_all(home_dir)?;
+    create_new_with(&Path::new(home_dir).join(name), |file| {
+        file.write_all(contents)
+    })
+}
+
+/// Creates `path` and fills it with `write`, returning false if it already
+/// exists. If `write` fails, the new file is removed: a partly written config
+/// would otherwise count as existing on every later run
+fn create_new_with(
+    path: &Path,
+    write: impl FnOnce(&mut fs::File) -> std::io::Result<()>,
+) -> Result<bool> {
+    let mut file = match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(e) => return Err(e.into()),
+    };
+
+    if let Err(e) = write(&mut file) {
+        // create_new guarantees this run created the file, so it is safe to remove
+        let _ = fs::remove_file(path);
+        return Err(e.into());
+    }
+    Ok(true)
 }
 
 /// Reloads the agent serving `home_dir`, the directory whose config was just written
@@ -919,7 +957,7 @@ Home: /Users/user/.gnupg";
         let home_dir = temp_dir.path().to_str().unwrap();
 
         let result = configure_defaults(home_dir);
-        assert!(result.is_ok(), "Should create gpg.conf");
+        assert!(result.unwrap(), "Should create gpg.conf");
 
         let gpg_conf = temp_dir.path().join("gpg.conf");
         assert!(gpg_conf.exists(), "gpg.conf should exist");
@@ -929,12 +967,67 @@ Home: /Users/user/.gnupg";
     }
 
     #[test]
+    fn configure_defaults_leaves_existing_gpg_conf_untouched() {
+        let temp_dir = TempDir::new().unwrap();
+        let gpg_conf = temp_dir.path().join("gpg.conf");
+        fs::write(&gpg_conf, "keyserver hkps://keys.openpgp.org\n").unwrap();
+
+        let result = configure_defaults(temp_dir.path().to_str().unwrap());
+        assert!(!result.unwrap(), "Should report gpg.conf as left untouched");
+        assert_eq!(
+            fs::read_to_string(gpg_conf).unwrap(),
+            "keyserver hkps://keys.openpgp.org\n"
+        );
+    }
+
+    #[test]
+    fn create_new_with_removes_file_when_write_fails() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("gpg.conf");
+
+        let result = create_new_with(&path, |_| Err(std::io::Error::other("disk full")));
+        assert!(result.is_err());
+        assert!(
+            !path.exists(),
+            "A partly written file must not be left behind"
+        );
+    }
+
+    #[test]
+    fn create_new_with_never_removes_an_existing_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("gpg.conf");
+        fs::write(&path, "keyserver hkps://keys.openpgp.org\n").unwrap();
+
+        let result = create_new_with(&path, |_| Err(std::io::Error::other("disk full")));
+        assert!(!result.unwrap(), "Should report the file as left untouched");
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn configure_agent_defaults_leaves_existing_gpg_agent_conf_untouched() {
+        let temp_dir = TempDir::new().unwrap();
+        let agent_conf = temp_dir.path().join("gpg-agent.conf");
+        fs::write(&agent_conf, "pinentry-program /usr/bin/pinentry-gnome3\n").unwrap();
+
+        let result = configure_agent_defaults(temp_dir.path().to_str().unwrap());
+        assert!(
+            !result.unwrap(),
+            "Should report gpg-agent.conf as left untouched"
+        );
+        assert_eq!(
+            fs::read_to_string(agent_conf).unwrap(),
+            "pinentry-program /usr/bin/pinentry-gnome3\n"
+        );
+    }
+
+    #[test]
     fn configure_agent_defaults_creates_gpg_agent_conf() {
         let temp_dir = TempDir::new().unwrap();
         let home_dir = temp_dir.path().to_str().unwrap();
 
         let result = configure_agent_defaults(home_dir);
-        assert!(result.is_ok(), "Should create gpg-agent.conf");
+        assert!(result.unwrap(), "Should create gpg-agent.conf");
 
         let agent_conf = temp_dir.path().join("gpg-agent.conf");
         assert!(agent_conf.exists(), "gpg-agent.conf should exist");
