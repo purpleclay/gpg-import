@@ -152,6 +152,56 @@ fn import_secret_key_under_non_c_locale() {
 
 #[test]
 #[serial]
+fn import_secret_key_does_not_need_a_temp_dir() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    // LocaleGuard restores any environment variable, not just locale ones.
+    // An unusable TMPDIR makes any temp file created during import fail.
+    let _tmpdir_guard = LocaleGuard::set(&[("TMPDIR", "/nonexistent/gpg-import-test")]);
+
+    let result = gpg::import_secret_key(include_str!("testdata/no-passphrase.base64.key"));
+    assert!(
+        result.is_ok(),
+        "Import should not create a temp file: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+#[serial]
+fn preview_key_does_not_need_a_temp_dir() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    // An unusable TMPDIR makes any temp file created during preview fail
+    let _tmpdir_guard = LocaleGuard::set(&[("TMPDIR", "/nonexistent/gpg-import-test")]);
+
+    let result = gpg::preview_key(include_str!("testdata/no-passphrase.base64.key"));
+    assert!(
+        result.is_ok(),
+        "Preview should not write the key to disk: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+#[serial]
+fn preview_key_invalid_gpg_data() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    use base64::{Engine as _, engine::general_purpose};
+    let result = gpg::preview_key(&general_purpose::STANDARD.encode("not a gpg key"));
+
+    let err = result.unwrap_err();
+    let gpg_err = err.downcast_ref::<gpg::GpgError>().unwrap();
+    assert!(
+        matches!(gpg_err, gpg::GpgError::InvalidGpgKeyData(_)),
+        "Expected InvalidGpgKeyData error, got: {}",
+        gpg_err
+    );
+}
+
+#[test]
+#[serial]
 fn import_secret_key_base64_with_passphrase() {
     let fixture = GpgTestFixture::new();
     assert!(fixture.is_ok(), "Failed to create GPG test fixture");
