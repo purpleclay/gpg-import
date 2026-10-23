@@ -47,8 +47,6 @@
         # Lint tools for CI jobs that don't need the Rust toolchain
         ciTools = with pkgs; [
           alejandra
-          shellcheck
-          shfmt
           typos
         ];
 
@@ -73,6 +71,13 @@
           src = ./.;
           package = pkgs.prek;
           hooks = {
+            alejandra = {
+              enable = true;
+              settings = {
+                check = true;
+              };
+            };
+
             typos = {
               enable = true;
               entry = "${pkgs.typos}/bin/typos --force-exclude";
