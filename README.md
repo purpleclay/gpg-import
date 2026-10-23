@@ -7,13 +7,13 @@
 
 Import and configure GPG signing for git. Runs on Linux and macOS.
 
-> [!TIP]
-> Requires GnuPG (`gpg` and `gpg-connect-agent`) on your `$PATH`, and `git` for configuring signing. `git` isn't needed with `--skip-git`.
+> [!IMPORTANT]
+> Requires GnuPG (`gpg` and `gpg-connect-agent`) on your `$PATH`. `git` is optional, and only needed to configure signing.
 
 ## Features
 
-- Import GPG keys in ASCII armored format (_optionally base64 encoded for CI environments_) from an environment variable, stdin or a file.
-- Read the passphrase from an environment variable, stdin or a file, keeping it off the command line.
+- Import GPG keys in ASCII armored format (_optionally base64 encoded for CI environments_).
+- Read the key and passphrase from an environment variable, stdin or a file, keeping them off the command line.
 - Preset the passphrase in the GPG agent for the primary key and every subkey, for non-interactive signing.
 - Configure local or global git signing for commits, tags and pushes.
 - Select a specific key or subkey for signing by fingerprint. GPG then signs with exactly that key, not the newest signing subkey.
@@ -25,22 +25,19 @@ Import and configure GPG signing for git. Runs on Linux and macOS.
 
 ## Install
 
-To install the latest version using a bash script:
-
 ```sh
-sh -c "$(curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install.sh)"
+curl -fsSL https://get.purpleclay.io | sh -s -- gpg-import
+gpg-import --help
 ```
 
-To install a specific version, into another directory or without `sudo`, see the installer's options:
+> [!TIP]
+> By default, `gpg-import` installs to `~/.local/bin`. If that isn't on your `$PATH`, add it, or install to `/usr/local/bin` by running the installer with `sudo`:
+>
+> ```sh
+> curl -fsSL https://get.purpleclay.io | sudo sh -s -- gpg-import
+> ```
 
-```sh
-sh -c "$(curl https://raw.githubusercontent.com/purpleclay/gpg-import/main/scripts/install.sh)" \
-  -- --help
-```
-
-## Run with Nix
-
-If you have nix installed, you can run the binary directly from the GitHub repository:
+Or, with Nix, run it straight from the repository without installing:
 
 ```sh
 nix run github:purpleclay/gpg-import -- --help
@@ -52,17 +49,13 @@ nix run github:purpleclay/gpg-import -- --help
 
 ```sh
 gpg --armor --export-secret-key batman@dc.com
-```
 
-For CI environments that don't handle multiline secrets well, you can base64 encode the key:
-
-```sh
+# For CI systems that don't handle multiline secrets, base64 encode it.
+# Wrapped output is accepted, so there's no need for -w 0
 gpg --armor --export-secret-key batman@dc.com | base64
 ```
 
-`base64` wraps its output at 76 columns by default. Wrapped input is accepted, so there is no need for `-w 0`.
-
-## Quick Start
+## Quick start
 
 Set the `GPG_PRIVATE_KEY` environment variable (and optionally `GPG_PASSPHRASE`), then run:
 
@@ -105,5 +98,5 @@ tag.gpgsign:     true
 push.gpgsign:    if-asked
 ```
 
-> [!TIP]
+> [!NOTE]
 > On a workstation, your existing `gpg.conf` and `gpg-agent.conf` are left alone. To preset a passphrase, your `gpg-agent.conf` must contain `allow-preset-passphrase`.
