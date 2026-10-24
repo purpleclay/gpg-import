@@ -16,6 +16,7 @@
 !flake.nix
 !LICENSE
 !README.md
+!SECURITY.md
 !src/*.rs
 !src/snapshots/*
 !tests/snapshots/*
