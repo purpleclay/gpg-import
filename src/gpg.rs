@@ -1513,4 +1513,98 @@ uid:u::::1700000000::1E9C7598797E7F7A380A72A58B9B7FA28160AB07::robin <robin@dc.c
         let err = run("sh", &["-c", "echo early >&2; exit 4"], &vec![b'y'; MIB]).unwrap_err();
         assert!(err.to_string().contains("early"), "{err}");
     }
+
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+        use proptest::sample::Index;
+
+        /// Escapes text the way gpg does in `--with-colons` uid fields
+        fn escape_colon_field(value: &str) -> String {
+            value.replace('\\', "\\x5c").replace(':', "\\x3a")
+        }
+
+        fn whitespace() -> impl Strategy<Value = &'static str> {
+            prop_oneof![Just(" "), Just("\n"), Just("\r\n"), Just("\t")]
+        }
+
+        /// Either an `IMPORT_OK` record (flags, fingerprint), or another
+        /// status line that parse_status_import must ignore
+        #[derive(Clone, Debug)]
+        enum StatusLine {
+            ImportOk(u32, String),
+            Other(&'static str),
+        }
+
+        fn status_line() -> impl Strategy<Value = StatusLine> {
+            prop_oneof![
+                (0u32..32, "[0-9A-F]{40}")
+                    .prop_map(|(flags, fpr)| StatusLine::ImportOk(flags, fpr)),
+                prop_oneof![
+                    Just("[GNUPG:] KEY_CONSIDERED BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127 0"),
+                    Just("[GNUPG:] IMPORTED FDEFE8AB8796E127 batman <batman@dc.com>"),
+                    Just("[GNUPG:] IMPORT_RES 1 0 1 0 0 0 0 0 0 1 1 0 0 0 0"),
+                    Just("gpg: key FDEFE8AB8796E127: secret key imported"),
+                ]
+                .prop_map(StatusLine::Other),
+            ]
+        }
+
+        proptest! {
+            #[test]
+            fn decode_key_input_ignores_whitespace_in_base64(
+                key in prop::collection::vec(any::<u8>(), 1..512),
+                inserts in prop::collection::vec((any::<Index>(), whitespace()), 0..16),
+            ) {
+                let mut encoded = general_purpose::STANDARD.encode(&key);
+                for (index, ws) in inserts {
+                    let at = index.index(encoded.len() + 1);
+                    encoded.insert_str(at, ws);
+                }
+
+                prop_assert_eq!(decode_key_input(&encoded).unwrap(), key);
+            }
+
+            #[test]
+            fn unescape_colon_field_reverses_gpg_escaping(value in any::<String>()) {
+                prop_assert_eq!(unescape_colon_field(&escape_colon_field(&value)), value);
+            }
+
+            // Each strategy gets a third of the cases. chrono represents only
+            // about ±8.2e12 seconds, a tiny fraction of i64, and only years 0 to
+            // 9999 (-62167219200 to 253402300799) are formatted as dates, so
+            // both ranges are sampled directly as well as the whole of i64
+            #[test]
+            fn timestamp_formatting_never_panics(
+                secs in prop_oneof![
+                    any::<i64>(),
+                    -10_000_000_000_000i64..10_000_000_000_000,
+                    -62_167_219_200i64..=253_402_300_799,
+                ],
+            ) {
+                format_timestamp(secs);
+                format_expiration_in_days(secs);
+            }
+
+            #[test]
+            fn parse_status_import_finds_the_first_secret_key_record(
+                lines in prop::collection::vec(status_line(), 0..12),
+            ) {
+                let status = lines
+                    .iter()
+                    .map(|line| match line {
+                        StatusLine::ImportOk(flags, fpr) => format!("[GNUPG:] IMPORT_OK {flags} {fpr}"),
+                        StatusLine::Other(text) => text.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let expected = lines.iter().find_map(|line| match line {
+                    StatusLine::ImportOk(flags, fpr) if flags & 16 != 0 => Some(fpr.clone()),
+                    _ => None,
+                });
+
+                prop_assert_eq!(parse_status_import(&status), expected);
+            }
+        }
+    }
 }

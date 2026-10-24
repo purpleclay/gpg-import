@@ -15,6 +15,7 @@
 !flake.lock
 !flake.nix
 !LICENSE
+!proptest-regressions/**/*.txt
 !README.md
 !SECURITY.md
 !src/*.rs
