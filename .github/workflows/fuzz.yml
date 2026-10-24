@@ -1,0 +1,67 @@
+name: fuzz
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".clusterfuzzlite/**"
+      - ".github/workflows/fuzz.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "fuzz/**"
+      - "src/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  fuzzing:
+    name: fuzzing
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      actions: read # download the corpus from earlier runs' artifacts
+      contents: read # read the code being fuzzed
+      security-events: write # needed by codeql-action/upload-sarif to publish crashes as code scanning alerts
+    steps:
+      - name: harden_runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            gcr.io:443
+            github.com:443
+            index.crates.io:443
+            static.crates.io:443
+            static.rust-lang.org:443
+
+      - name: build_fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: rust
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: address
+
+      - name: run_fuzzers
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 300
+          mode: code-change
+          sanitizer: address
+          output-sarif: true
+
+      # results.sarif is written whenever a target ran, crash or not, but not
+      # if the build failed
+      - name: upload_sarif
+        if: always() && steps.build.outcome == 'success' && hashFiles('cifuzz-sarif/results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: cifuzz-sarif/results.sarif
+          checkout_path: cifuzz-sarif
+          category: clusterfuzzlite

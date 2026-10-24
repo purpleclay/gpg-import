@@ -1,0 +1,13 @@
+# Tokens from gpg's --with-colons output, for libFuzzer's -dict option
+"sec:"
+"ssb:"
+"fpr:"
+"grp:"
+"uid:"
+":"
+"\x0a"
+"\\x3a"
+"\\x5c"
+" <"
+">"
+"scESC"

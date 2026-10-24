@@ -1,0 +1,81 @@
+name: fuzz_scheduled
+on:
+  schedule:
+    - cron: "30 3 * * 1" # weekly, on Monday. PRs are fuzzed separately
+  workflow_dispatch:
+
+# Only batch and prune upload a corpus, so these jobs are what the PR job's
+# corpus comes from. Prune runs after batch so the two never upload together
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  cflite_batch:
+    name: cflite_batch
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    permissions:
+      actions: read # download the corpus from earlier runs' artifacts
+      contents: read # read the code being fuzzed
+      security-events: write # needed by codeql-action/upload-sarif to publish crashes as code scanning alerts
+    steps:
+      - name: harden_runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: build_fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: rust
+          sanitizer: address
+
+      # fuzz-seconds is shared between all targets
+      - name: run_fuzzers
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 3600
+          mode: batch
+          sanitizer: address
+          output-sarif: true
+
+      - name: upload_sarif
+        if: always() && steps.build.outcome == 'success' && hashFiles('cifuzz-sarif/results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: cifuzz-sarif/results.sarif
+          checkout_path: cifuzz-sarif
+          category: clusterfuzzlite
+
+  cflite_prune:
+    name: cflite_prune
+    needs: cflite_batch
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      actions: read # download the corpus from earlier runs' artifacts
+      contents: read # read the code being fuzzed
+    steps:
+      - name: harden_runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: build_fuzzers
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: rust
+          sanitizer: address
+
+      - name: run_fuzzers
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: prune
+          sanitizer: address

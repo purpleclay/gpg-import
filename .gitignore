@@ -1,6 +1,7 @@
 # Ignore everything and selectively allow files
 *
 
+!.clusterfuzzlite/*
 !.envrc
 !.github/**/*
 !.gitignore
@@ -14,6 +15,11 @@
 !default.nix
 !flake.lock
 !flake.nix
+!fuzz/Cargo.lock
+!fuzz/Cargo.toml
+!fuzz/colon_records.dict
+!fuzz/fuzz_targets/*.rs
+!fuzz/seeds/**/*
 !LICENSE
 !proptest-regressions/**/*.txt
 !README.md

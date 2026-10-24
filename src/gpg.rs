@@ -653,7 +653,9 @@ pub enum GpgError {
 
 /// Detects the key format and returns the raw key bytes.
 /// Supports ASCII armored keys in both plain text and base64 encoded formats.
-fn decode_key_input(key: &str) -> Result<Vec<u8>> {
+// Public, but hidden from the docs, only so the fuzz targets in fuzz/ can call it
+#[doc(hidden)]
+pub fn decode_key_input(key: &str) -> Result<Vec<u8>> {
     if key.trim_start().starts_with("-----BEGIN PGP") {
         return Ok(key.as_bytes().to_vec());
     }
