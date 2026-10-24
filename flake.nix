@@ -100,6 +100,15 @@
             packages = ciTools;
           };
 
+          # cargo-fuzz needs nightly for its sanitizers, so it gets its own shell
+          # rather than moving the default one off the pinned stable toolchain
+          devShells.fuzz = mkShell {
+            packages = [
+              (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal))
+              cargo-fuzz
+            ];
+          };
+
           packages.default = pkgs.callPackage ./default.nix {
             inherit rustPlatform;
             rev = self.rev or self.dirtyRev or null;
