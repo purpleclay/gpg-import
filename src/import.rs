@@ -239,7 +239,7 @@ impl GpgImport {
     /// exactly that key or subkey rather than the newest signing-capable one.
     fn resolve_signing_key(&self, private_key: &gpg::GpgPrivateKey) -> Result<String> {
         let Some(fp) = &self.fingerprint else {
-            return Ok(private_key.secret_key.key_id.clone());
+            return Ok(private_key.secret_key.fingerprint.clone());
         };
 
         let Some(key) = std::iter::once(&private_key.secret_key)
@@ -562,11 +562,11 @@ mod tests {
     }
 
     #[test]
-    fn resolve_signing_key_defaults_to_primary_key_id() {
+    fn resolve_signing_key_defaults_to_primary_fingerprint() {
         let key = test_key("batman@dc.com", &[("FIRSTSUBKEYFPR", None)]);
         let import = GpgImport::new("irrelevant".to_string());
 
         let result = import.resolve_signing_key(&key);
-        assert_eq!(result.unwrap(), "PRIMARYKEYID");
+        assert_eq!(result.unwrap(), "PRIMARYFPR");
     }
 }

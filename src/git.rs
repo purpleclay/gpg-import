@@ -13,7 +13,7 @@ pub struct SigningConfig {
     pub user_name: String,
     /// User email associated with the signing key, maps to user.email
     pub user_email: String,
-    /// The signing key, maps to user.signingKey: the primary key ID, or
+    /// The signing key, maps to user.signingKey: the primary fingerprint, or
     /// `<fingerprint>!` when a specific key or subkey was selected
     pub key_id: String,
     /// A flag to enable GPG signing of commits, maps to commit.gpgsign
@@ -116,7 +116,7 @@ mod tests {
         SigningConfig {
             user_name: user_name.to_string(),
             user_email: "batman@dc.com".to_string(),
-            key_id: "FDEFE8AB8796E127".to_string(),
+            key_id: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
             commit_sign: true,
             tag_sign,
             push_sign,
@@ -157,7 +157,7 @@ mod tests {
         );
         assert_eq!(
             config_get(&file, "user.signingKey").as_deref(),
-            Some("FDEFE8AB8796E127")
+            Some("BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127")
         );
         assert_eq!(config_get(&file, "commit.gpgsign").as_deref(), Some("true"));
         assert_eq!(config_get(&file, "tag.gpgsign").as_deref(), Some("true"));
@@ -211,7 +211,7 @@ mod tests {
         let cfg = SigningConfig {
             user_name: "batman".to_string(),
             user_email: "batman@dc.com".to_string(),
-            key_id: "FDEFE8AB8796E127".to_string(),
+            key_id: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
             commit_sign: true,
             tag_sign: true,
             push_sign: true,
@@ -224,7 +224,7 @@ mod tests {
         let cfg = SigningConfig {
             user_name: "batman".to_string(),
             user_email: "batman@dc.com".to_string(),
-            key_id: "FDEFE8AB8796E127".to_string(),
+            key_id: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
             commit_sign: true,
             tag_sign: true,
             push_sign: false,
