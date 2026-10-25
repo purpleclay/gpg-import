@@ -4,6 +4,6 @@ expression: cfg.to_string()
 ---
 user.name:       batman
 user.email:      batman@dc.com
-user.signingKey: FDEFE8AB8796E127
+user.signingKey: BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
 commit.gpgsign:  true
 tag.gpgsign:     true

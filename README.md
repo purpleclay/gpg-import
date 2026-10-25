@@ -90,13 +90,13 @@ keygrip: A6780D53C3236724F960FD8AC07848F38C66CF48 [008183F9F50359D1]
 trust_level: 5 [EF48BE1DFBFA8BA5]
 
 > Verified signing:
-signing_key: EF48BE1DFBFA8BA5
+signing_key: 85E1AA4D4F9FE316A8F452DDEF48BE1DFBFA8BA5
 signed_with: 85E1AA4D4F9FE316A8F452DDEF48BE1DFBFA8BA5
 
 > Git config set (local):
 user.name:       batman
 user.email:      batman@dc.com
-user.signingKey: EF48BE1DFBFA8BA5
+user.signingKey: 85E1AA4D4F9FE316A8F452DDEF48BE1DFBFA8BA5
 commit.gpgsign:  true
 tag.gpgsign:     true
 push.gpgsign:    if-asked
