@@ -645,6 +645,12 @@ pub enum GpgError {
     #[error("selected key cannot sign: {0}")]
     KeyCannotSign(String),
 
+    /// The imported key could not make and verify a test signature
+    #[error(
+        "couldn't make a test signature with {0}; check the passphrase is correct (or pass --skip-verify): {1}"
+    )]
+    SigningCheckFailed(String, String),
+
     /// A GPG process ran but exited non-zero: program, exit status, stderr
     /// (or stdout if stderr was empty)
     #[error("{0} failed ({1}): {2}")]
@@ -771,6 +777,62 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
     Ok(key_details)
 }
 
+/// Proves `signing_key` can sign: signs a short message with it, exactly as
+/// git would, then verifies the signature. Returns the fingerprint of the key
+/// or subkey that signed. `--pinentry-mode error` fails rather than prompting,
+/// so a missing or wrong passphrase is reported instead of opening a dialog
+pub fn verify_signing(signing_key: &str) -> Result<String> {
+    let signed = run(
+        "gpg",
+        &[
+            "--batch",
+            "--pinentry-mode",
+            "error",
+            "--local-user",
+            signing_key,
+            "--sign",
+            "--armor",
+        ],
+        b"gpg-import signing check\n",
+    )
+    .map_err(|e| match e.downcast::<GpgError>() {
+        // gpg repeats the same failure line, so keep only the last
+        Ok(GpgError::CommandFailed(_, _, stderr)) => GpgError::SigningCheckFailed(
+            signing_key.to_string(),
+            stderr.lines().last().unwrap_or_default().to_string(),
+        )
+        .into(),
+        Ok(other) => other.into(),
+        Err(e) => e,
+    })?;
+
+    let verified = run(
+        "gpg",
+        &["--batch", "--status-fd", "1", "--verify"],
+        &signed.stdout,
+    )?;
+    parse_validsig(&String::from_utf8_lossy(&verified.stdout)).ok_or_else(|| {
+        GpgError::SigningCheckFailed(
+            signing_key.to_string(),
+            "the signature did not verify".to_string(),
+        )
+        .into()
+    })
+}
+
+/// Extracts the fingerprint of the signing key from a `--status-fd` record:
+///
+/// ```text
+/// [GNUPG:] VALIDSIG <signing key fpr> <date> <timestamp> ... <primary key fpr>
+/// ```
+fn parse_validsig(status: &str) -> Option<String> {
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("[GNUPG:] VALIDSIG "))
+        .and_then(|rest| rest.split_whitespace().next())
+        .map(String::from)
+}
+
 /// Presets the passphrase for a given keygrip, ensuring it is cached for any
 /// subsequent signing request
 pub fn preset_passphrase(keygrip: &str, passphrase: &str) -> Result<()> {
@@ -895,6 +957,28 @@ mod tests {
             parse_status_import(status),
             Some("294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string())
         );
+    }
+
+    #[test]
+    fn parse_validsig_returns_the_signing_key_fingerprint() {
+        // A signature by a subkey: the first field is the subkey, the last
+        // the primary key
+        let status = "[GNUPG:] NEWSIG
+[GNUPG:] GOODSIG FF7AC16EFBD58A81 batman <batman@dc.com>
+[GNUPG:] VALIDSIG 3E44D0598C6A8BEF3E44D0598C6A8BEF3E44D059 2026-10-25 1792921764 0 4 0 1 10 00 E9D7C62839888A9DE8A1643EFF7AC16EFBD58A81";
+
+        assert_eq!(
+            parse_validsig(status),
+            Some("3E44D0598C6A8BEF3E44D0598C6A8BEF3E44D059".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_validsig_returns_none_without_a_valid_signature() {
+        let status = "[GNUPG:] NEWSIG
+[GNUPG:] BADSIG FF7AC16EFBD58A81 batman <batman@dc.com>";
+
+        assert_eq!(parse_validsig(status), None);
     }
 
     #[test]

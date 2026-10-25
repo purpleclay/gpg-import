@@ -102,6 +102,10 @@ struct Args {
     /// Simulate the import without making changes
     #[arg(long, env = "GPG_DRY_RUN", value_parser = FalseyValueParser::new())]
     dry_run: bool,
+
+    /// Skip the test signature that proves the imported key can sign
+    #[arg(long, env = "GPG_SKIP_VERIFY", value_parser = FalseyValueParser::new())]
+    skip_verify: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -196,6 +200,7 @@ fn main() -> Result<()> {
         .with_git_committer_name(args.git_committer_name)
         .with_git_committer_email(args.git_committer_email)
         .dry_run(args.dry_run)
+        .skip_verify(args.skip_verify)
         .import()
 }
 
@@ -241,12 +246,13 @@ mod tests {
     #[serial]
     fn boolean_env_vars_accept_common_truthy_and_falsey_values() {
         type Flag = (&'static str, &'static str, fn(&Args) -> bool);
-        let flags: [Flag; 3] = [
+        let flags: [Flag; 4] = [
             ("GPG_SKIP_GIT", "--skip-git", |a| a.skip_git),
             ("GPG_GIT_GLOBAL_CONFIG", "--git-global-config", |a| {
                 a.git_global_config
             }),
             ("GPG_DRY_RUN", "--dry-run", |a| a.dry_run),
+            ("GPG_SKIP_VERIFY", "--skip-verify", |a| a.skip_verify),
         ];
         let cases = [
             (None, false),

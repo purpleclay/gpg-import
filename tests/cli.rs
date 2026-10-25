@@ -135,6 +135,63 @@ fn dry_run_reports_what_would_change() {
         stdout.contains("> Git config would be set (global):"),
         "{stdout}"
     );
+    assert!(
+        !stdout.contains("Verified signing"),
+        "A dry run imports nothing, so it can't sign: {stdout}"
+    );
+}
+
+#[test]
+#[serial]
+fn import_verifies_the_key_can_sign() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    let key = format!("@{PASSPHRASE_KEY}");
+    let output = gpg_import(&["--key", &key, "--passphrase", "-"], "gotham\n");
+
+    assert!(
+        output.status.success(),
+        "gpg-import failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("> Verified signing:"), "{stdout}");
+}
+
+#[test]
+#[serial]
+fn wrong_passphrase_fails_the_signing_check() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    let key = format!("@{PASSPHRASE_KEY}");
+    let output = gpg_import(&["--key", &key, "--passphrase", "-"], "joker\n");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("test signature") && stderr.contains("passphrase"),
+        "unexpected error: {stderr}"
+    );
+}
+
+#[test]
+#[serial]
+fn skip_verify_skips_the_signing_check() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    let key = format!("@{PASSPHRASE_KEY}");
+    let output = gpg_import(
+        &["--key", &key, "--passphrase", "-", "--skip-verify"],
+        "joker\n",
+    );
+
+    assert!(
+        output.status.success(),
+        "--skip-verify should not sign, so a wrong passphrase goes unnoticed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("Verified signing"), "{stdout}");
 }
 
 #[test]

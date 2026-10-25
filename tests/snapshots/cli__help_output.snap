@@ -89,5 +89,10 @@ Options:
           
           [env: GPG_DRY_RUN=]
 
+      --skip-verify
+          Skip the test signature that proves the imported key can sign
+          
+          [env: GPG_SKIP_VERIFY=]
+
   -h, --help
           Print help (see a summary with '-h')

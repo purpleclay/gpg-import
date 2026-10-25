@@ -13,6 +13,7 @@ pub struct GpgImport {
     git_committer_name: Option<String>,
     git_committer_email: Option<String>,
     dry_run: bool,
+    skip_verify: bool,
 }
 
 impl GpgImport {
@@ -29,6 +30,7 @@ impl GpgImport {
             git_committer_name: None,
             git_committer_email: None,
             dry_run: false,
+            skip_verify: false,
         }
     }
 
@@ -53,6 +55,12 @@ impl GpgImport {
     /// Skip git repository configuration.
     pub fn skip_git(mut self, skip: bool) -> Self {
         self.skip_git = skip;
+        self
+    }
+
+    /// Skip the test signature that proves the imported key can sign.
+    pub fn skip_verify(mut self, skip: bool) -> Self {
+        self.skip_verify = skip;
         self
     }
 
@@ -93,6 +101,7 @@ impl GpgImport {
         let private_key = self.import_gpg_key(&info)?;
         self.configure_gpg_passphrase(&private_key)?;
         self.configure_gpg_trust_level(&private_key)?;
+        self.verify_signing(&private_key)?;
         self.configure_git_signing(&private_key)?;
 
         Ok(())
@@ -168,6 +177,23 @@ impl GpgImport {
             "trust_level: {} [{}]",
             trust_level, private_key.secret_key.key_id
         );
+
+        Ok(())
+    }
+
+    /// Signs with the key git will use, before git is configured, so a wrong
+    /// passphrase or agent problem fails the import rather than a later commit
+    fn verify_signing(&self, private_key: &gpg::GpgPrivateKey) -> Result<()> {
+        if self.skip_verify || self.dry_run {
+            return Ok(());
+        }
+
+        let signing_key = self.resolve_signing_key(private_key)?;
+        let signed_with = gpg::verify_signing(&signing_key)?;
+
+        println!("\n> Verified signing:");
+        println!("signing_key: {signing_key}");
+        println!("signed_with: {signed_with}");
 
         Ok(())
     }
