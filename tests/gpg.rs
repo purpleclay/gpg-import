@@ -702,6 +702,42 @@ fn import_secret_key_rejects_public_only_key() {
 
 #[test]
 #[serial]
+fn import_secret_key_rejects_multiple_keys() {
+    let fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    let batch_config = "Key-Type: RSA
+Key-Length: 2048
+Key-Usage: sign
+Name-Real: robin
+Name-Email: robin@dc.com
+%no-protection
+%commit
+";
+    let robin = fixture
+        .generate_key(batch_config, None)
+        .expect("Failed to generate a second GPG key");
+    let robin_armored = fixture
+        .export_secret_key(&robin)
+        .expect("Failed to export the second GPG key");
+    let bundle = format!(
+        "{}\n{robin_armored}",
+        include_str!("testdata/no-passphrase.asc")
+    );
+
+    let err = gpg::import_secret_key(&bundle).unwrap_err();
+
+    let gpg_err = err.downcast_ref::<gpg::GpgError>().unwrap();
+    assert_eq!(
+        gpg_err,
+        &gpg::GpgError::MultipleKeys(vec![
+            "294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string(),
+            robin,
+        ])
+    );
+}
+
+#[test]
+#[serial]
 fn import_secret_key_does_not_blame_the_key_when_gpg_cannot_start() {
     let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
     let empty_path = tempfile::TempDir::new().unwrap();
