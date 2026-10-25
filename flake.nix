@@ -39,9 +39,14 @@
           extensions = ["rust-src" "cargo" "rustc" "clippy" "rustfmt" "rust-analyzer"];
         };
 
+        # Without rust-src, rustc keeps the standard library's /rustc/<commit>
+        # paths in panic locations, rather than paths into the Nix store that
+        # would make the whole toolchain a runtime dependency of the package
+        packageToolchain = pkgs.rust-bin.stable."1.97.1".minimal;
+
         rustPlatform = pkgs.makeRustPlatform {
-          cargo = rustToolchain;
-          rustc = rustToolchain;
+          cargo = packageToolchain;
+          rustc = packageToolchain;
         };
 
         # Lint tools for CI jobs that don't need the Rust toolchain
