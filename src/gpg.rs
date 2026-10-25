@@ -378,27 +378,44 @@ fn format_expiration_in_days(secs_since_epoch: i64) -> String {
     format!("{} ({})", expires_on.to_rfc2822(), days_text)
 }
 
-/// Extracts the fingerprint of the first imported secret key from
-/// `--status-fd` records: an `IMPORT_OK` line with flag bit 16 set, e.g.:
+/// Extracts the fingerprint of the imported secret key from `--status-fd`
+/// records: an `IMPORT_OK` line with flag bit 16 set, e.g.:
 ///
 /// ```text
 /// [GNUPG:] IMPORT_OK 17 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
 /// ```
 ///
 /// gpg writes a public-key record (flags `1`, or `0` if already present)
-/// before the secret one, so every `IMPORT_OK` line is checked.
-fn parse_status_import(status: &str) -> Option<String> {
-    status
+/// before the secret one, so every `IMPORT_OK` line is checked. A second
+/// fingerprint, public or secret, means the input held more than one key.
+fn parse_status_import(status: &str) -> Result<String, GpgError> {
+    let mut fingerprints: Vec<&str> = Vec::new();
+    let mut secret_key = None;
+
+    for rest in status
         .lines()
         .filter_map(|line| line.strip_prefix("[GNUPG:] IMPORT_OK "))
-        .find_map(|rest| {
-            let mut fields = rest.split_whitespace();
-            let flags = fields.next()?.parse::<u32>().ok()?;
-            if flags & 16 == 0 {
-                return None;
-            }
-            fields.next().map(String::from)
-        })
+    {
+        let mut fields = rest.split_whitespace();
+        let (Some(Ok(flags)), Some(fpr)) = (fields.next().map(str::parse::<u32>), fields.next())
+        else {
+            continue;
+        };
+
+        if !fingerprints.contains(&fpr) {
+            fingerprints.push(fpr);
+        }
+        if flags & 16 != 0 {
+            secret_key = Some(fpr);
+        }
+    }
+
+    if fingerprints.len() > 1 {
+        return Err(GpgError::MultipleKeys(
+            fingerprints.into_iter().map(String::from).collect(),
+        ));
+    }
+    secret_key.map(String::from).ok_or(GpgError::NoSecretKey)
 }
 
 /// Field indices (0-based, after splitting a colon-format line on `:`),
@@ -420,6 +437,18 @@ fn parse_gpg_key_details(input: &str) -> Result<GpgPrivateKey, GpgError> {
     let mut secret_key: Option<GpgKeyDetails> = None;
     let mut subkeys: Vec<GpgKeyDetails> = Vec::new();
     let mut uids: Vec<GpgUid> = Vec::new();
+
+    // A public key's records would otherwise attach to the secret key's
+    let primary_keys = input
+        .lines()
+        .filter(|line| line.starts_with("sec:") || line.starts_with("pub:"))
+        .count();
+    if primary_keys > 1 {
+        return Err(GpgError::InvalidGpgKeyData(
+            "multiple primary keys (sec or pub records) found in input; expected exactly one"
+                .to_string(),
+        ));
+    }
 
     for (line_no, line) in input.lines().enumerate() {
         let fields: Vec<&str> = line.split(':').collect();
@@ -444,12 +473,6 @@ fn parse_gpg_key_details(input: &str) -> Result<GpgPrivateKey, GpgError> {
                 };
 
                 if fields[0] == "sec" {
-                    if secret_key.is_some() {
-                        return Err(GpgError::InvalidGpgKeyData(
-                            "multiple primary keys (sec records) found in input; expected exactly one"
-                                .to_string(),
-                        ));
-                    }
                     secret_key = Some(details);
                 } else {
                     subkeys.push(details);
@@ -633,6 +656,10 @@ pub enum GpgError {
     #[error("unrecognised gpg --version output: {0}")]
     UnrecognisedVersionOutput(String),
 
+    /// The input held more than one key, listed by fingerprint
+    #[error("the provided input contains {} keys ({}); import one key per run", .0.len(), .0.join(", "))]
+    MultipleKeys(Vec<String>),
+
     /// The specified key was not found in the keyring
     #[error("gpg key not found: {0}")]
     KeyNotFound(String),
@@ -723,8 +750,9 @@ pub fn import_secret_key(key: &str) -> Result<String> {
         &["--status-fd", "1", "--import", "--batch", "--yes"],
         &decoded,
     )?;
-    parse_status_import(&String::from_utf8_lossy(&output.stdout))
-        .ok_or_else(|| GpgError::NoSecretKey.into())
+    Ok(parse_status_import(&String::from_utf8_lossy(
+        &output.stdout,
+    ))?)
 }
 
 /// Runs a gpg import with the key on stdin. Only gpg rejecting the key means
@@ -895,7 +923,7 @@ mod tests {
         let result = parse_status_import(status);
         assert_eq!(
             result,
-            Some("BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string())
+            Ok("BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string())
         );
     }
 
@@ -909,32 +937,32 @@ mod tests {
         let result = parse_status_import(status);
         assert_eq!(
             result,
-            Some("BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string())
+            Ok("BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string())
         );
     }
 
     #[test]
-    fn parse_status_import_returns_none_without_import_ok() {
+    fn parse_status_import_returns_no_secret_key_without_import_ok() {
         let status = "[GNUPG:] NODATA 1
 [GNUPG:] IMPORT_RES 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0";
 
-        assert_eq!(parse_status_import(status), None);
+        assert_eq!(parse_status_import(status), Err(GpgError::NoSecretKey));
     }
 
     #[test]
-    fn parse_status_import_returns_none_for_public_only_key() {
+    fn parse_status_import_returns_no_secret_key_for_public_only_key() {
         let status = "[GNUPG:] IMPORT_OK 1 294B469239FA3BAA8F3189C306DAA1368B5ABCC8
 [GNUPG:] IMPORT_RES 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0";
 
-        assert_eq!(parse_status_import(status), None);
+        assert_eq!(parse_status_import(status), Err(GpgError::NoSecretKey));
     }
 
     #[test]
-    fn parse_status_import_returns_none_for_public_key_already_in_keyring() {
+    fn parse_status_import_returns_no_secret_key_for_public_key_already_in_keyring() {
         let status = "[GNUPG:] IMPORT_OK 0 294B469239FA3BAA8F3189C306DAA1368B5ABCC8
 [GNUPG:] IMPORT_RES 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0";
 
-        assert_eq!(parse_status_import(status), None);
+        assert_eq!(parse_status_import(status), Err(GpgError::NoSecretKey));
     }
 
     #[test]
@@ -944,7 +972,7 @@ mod tests {
 
         assert_eq!(
             parse_status_import(status),
-            Some("294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string())
+            Ok("294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string())
         );
     }
 
@@ -955,7 +983,48 @@ mod tests {
 
         assert_eq!(
             parse_status_import(status),
-            Some("294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string())
+            Ok("294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_status_import_rejects_more_than_one_secret_key() {
+        let status = "[GNUPG:] IMPORT_OK 1 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
+[GNUPG:] IMPORT_OK 17 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
+[GNUPG:] IMPORT_OK 1 294B469239FA3BAA8F3189C306DAA1368B5ABCC8
+[GNUPG:] IMPORT_OK 17 294B469239FA3BAA8F3189C306DAA1368B5ABCC8";
+
+        assert_eq!(
+            parse_status_import(status),
+            Err(GpgError::MultipleKeys(vec![
+                "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
+                "294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string(),
+            ]))
+        );
+    }
+
+    #[test]
+    fn parse_status_import_rejects_a_public_key_alongside_the_secret_key() {
+        let status = "[GNUPG:] IMPORT_OK 1 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
+[GNUPG:] IMPORT_OK 17 BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
+[GNUPG:] IMPORT_OK 1 294B469239FA3BAA8F3189C306DAA1368B5ABCC8";
+
+        assert_eq!(
+            parse_status_import(status),
+            Err(GpgError::MultipleKeys(vec![
+                "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
+                "294B469239FA3BAA8F3189C306DAA1368B5ABCC8".to_string(),
+            ]))
+        );
+    }
+
+    #[test]
+    fn multiple_keys_error_lists_the_fingerprints() {
+        let err = GpgError::MultipleKeys(vec!["AAAA".to_string(), "BBBB".to_string()]);
+
+        assert_eq!(
+            err.to_string(),
+            "the provided input contains 2 keys (AAAA, BBBB); import one key per run"
         );
     }
 
@@ -982,8 +1051,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_status_import_returns_none_for_empty_input() {
-        assert_eq!(parse_status_import(""), None);
+    fn parse_status_import_returns_no_secret_key_for_empty_input() {
+        assert_eq!(parse_status_import(""), Err(GpgError::NoSecretKey));
     }
 
     #[test]
@@ -1532,6 +1601,24 @@ ssb:u:4096:1:BE6663F6A323FBE8:1700000000::::::e:::+:::23:"
     }
 
     #[test]
+    fn parse_public_key_alongside_secret_key_fails() {
+        let result = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
+fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
+grp:::::::::C4403DA4AF911084480BA46743E707CCDD082A24:
+uid:u::::1700000000::0E9C7598797E7F7A380A72A58B9B7FA28160AB06::batman <batman@dc.com>::::::::::0:
+pub:u:255:22:E02531BF955351B6:1700000000:::u:::scSC:::::ed25519:::0:
+fpr:::::::::7454482F61FB411BB041D4C0E02531BF955351B6:
+grp:::::::::3C0C28748C83AC5160FC051B0487F47391FF6D1B:
+uid:u::::1700000000::96652C75728C60697573C3570C362BED95E65447::robin <robin@dc.com>::::::::::0:"
+            .parse::<GpgPrivateKey>();
+
+        assert!(
+            matches!(result, Err(GpgError::InvalidGpgKeyData(_))),
+            "A public key's records must not merge into the secret key: {result:?}"
+        );
+    }
+
+    #[test]
     fn parse_multiple_sec_records_fails() {
         let result = "sec:u:4096:1:FDEFE8AB8796E127:1700000000:::u:::scESC:::+:::23::0:
 fpr:::::::::BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127:
@@ -1618,13 +1705,19 @@ uid:u::::1700000000::1E9C7598797E7F7A380A72A58B9B7FA28160AB07::robin <robin@dc.c
         /// status line that parse_status_import must ignore
         #[derive(Clone, Debug)]
         enum StatusLine {
-            ImportOk(u32, String),
+            ImportOk(u32, &'static str),
             Other(&'static str),
         }
 
+        /// Two keys, so a status often holds one key and often more
+        const FINGERPRINTS: [&str; 2] = [
+            "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127",
+            "294B469239FA3BAA8F3189C306DAA1368B5ABCC8",
+        ];
+
         fn status_line() -> impl Strategy<Value = StatusLine> {
             prop_oneof![
-                (0u32..32, "[0-9A-F]{40}")
+                (0u32..32, prop::sample::select(&FINGERPRINTS[..]))
                     .prop_map(|(flags, fpr)| StatusLine::ImportOk(flags, fpr)),
                 prop_oneof![
                     Just("[GNUPG:] KEY_CONSIDERED BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127 0"),
@@ -1673,7 +1766,7 @@ uid:u::::1700000000::1E9C7598797E7F7A380A72A58B9B7FA28160AB07::robin <robin@dc.c
             }
 
             #[test]
-            fn parse_status_import_finds_the_first_secret_key_record(
+            fn parse_status_import_finds_the_only_secret_key(
                 lines in prop::collection::vec(status_line(), 0..12),
             ) {
                 let status = lines
@@ -1684,10 +1777,25 @@ uid:u::::1700000000::1E9C7598797E7F7A380A72A58B9B7FA28160AB07::robin <robin@dc.c
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
-                let expected = lines.iter().find_map(|line| match line {
-                    StatusLine::ImportOk(flags, fpr) if flags & 16 != 0 => Some(fpr.clone()),
-                    _ => None,
-                });
+                let mut fingerprints: Vec<String> = Vec::new();
+                for line in &lines {
+                    if let StatusLine::ImportOk(_, fpr) = line
+                        && !fingerprints.iter().any(|f| f == fpr)
+                    {
+                        fingerprints.push(fpr.to_string());
+                    }
+                }
+                let expected = if fingerprints.len() > 1 {
+                    Err(GpgError::MultipleKeys(fingerprints))
+                } else {
+                    lines
+                        .iter()
+                        .find_map(|line| match line {
+                            StatusLine::ImportOk(flags, fpr) if flags & 16 != 0 => Some(fpr.to_string()),
+                            _ => None,
+                        })
+                        .ok_or(GpgError::NoSecretKey)
+                };
 
                 prop_assert_eq!(parse_status_import(&status), expected);
             }

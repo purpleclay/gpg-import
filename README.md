@@ -55,6 +55,10 @@ gpg --armor --export-secret-key batman@dc.com
 gpg --armor --export-secret-key batman@dc.com | base64
 ```
 
+Export one key per run. If the input holds more than one key, public or secret, `gpg-import` fails and lists their fingerprints. gpg will already have imported them into the keyring by then.
+
+The key's first uid supplies the git identity (`user.name` and `user.email`). Use `--git-committer-name` and `--git-committer-email` to override it.
+
 ## Quick start
 
 Set the `GPG_PRIVATE_KEY` environment variable (and optionally `GPG_PASSPHRASE`), then run:
