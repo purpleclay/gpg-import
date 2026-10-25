@@ -16,11 +16,12 @@ pub struct SigningConfig {
     /// The signing key, maps to user.signingKey: the primary fingerprint, or
     /// `<fingerprint>!` when a specific key or subkey was selected
     pub key_id: String,
-    /// A flag to enable GPG signing of commits, maps to commit.gpgsign
+    /// Enables GPG signing of commits, maps to commit.gpgsign. Left untouched
+    /// when off, so a value the user set themselves is kept
     pub commit_sign: bool,
-    /// A flag to enable GPG signing of tags, maps to tag.gpgsign
+    /// Enables GPG signing of tags, maps to tag.gpgsign. Left untouched when off
     pub tag_sign: bool,
-    /// A flag to enable GPG signing of pushes, maps to push.gpgsign
+    /// Enables GPG signing of pushes, maps to push.gpgsign. Left untouched when off
     pub push_sign: bool,
 }
 
@@ -29,8 +30,12 @@ impl Display for SigningConfig {
         writeln!(f, "user.name:       {}", self.user_name)?;
         writeln!(f, "user.email:      {}", self.user_email)?;
         writeln!(f, "user.signingKey: {}", self.key_id)?;
-        writeln!(f, "commit.gpgsign:  {}", self.commit_sign)?;
-        writeln!(f, "tag.gpgsign:     {}", self.tag_sign)?;
+        if self.commit_sign {
+            writeln!(f, "commit.gpgsign:  true")?;
+        }
+        if self.tag_sign {
+            writeln!(f, "tag.gpgsign:     true")?;
+        }
         if self.push_sign {
             writeln!(f, "push.gpgsign:    if-asked")?;
         }
@@ -84,15 +89,17 @@ pub fn configure_signing_global(cfg: &SigningConfig) -> Result<()> {
 }
 
 fn apply_signing_config(scope: &[&str], cfg: &SigningConfig) -> Result<()> {
-    let commit_sign = cfg.commit_sign.to_string();
-    let tag_sign = cfg.tag_sign.to_string();
     let mut entries = vec![
         ("user.name", cfg.user_name.as_str()),
         ("user.email", cfg.user_email.as_str()),
         ("user.signingKey", cfg.key_id.as_str()),
-        ("commit.gpgsign", commit_sign.as_str()),
-        ("tag.gpgsign", tag_sign.as_str()),
     ];
+    if cfg.commit_sign {
+        entries.push(("commit.gpgsign", "true"));
+    }
+    if cfg.tag_sign {
+        entries.push(("tag.gpgsign", "true"));
+    }
     if cfg.push_sign {
         entries.push(("push.gpgsign", "if-asked"));
     }
@@ -190,6 +197,45 @@ mod tests {
 
     #[test]
     #[serial]
+    fn apply_signing_config_leaves_unchosen_operations_untouched() {
+        let keys = [
+            ("commit.gpgsign", "true"),
+            ("tag.gpgsign", "true"),
+            ("push.gpgsign", "if-asked"),
+        ];
+
+        for chosen in 0..8u8 {
+            let temp_dir = TempDir::new().unwrap();
+            let file = temp_dir.path().join("config");
+            let file = file.to_str().unwrap();
+            // A choice the user already made in their own config
+            for (key, _) in keys {
+                git(&["config", "--file", file, key, "user-choice"]).unwrap();
+            }
+
+            let mut cfg = signing_config("batman", false, false);
+            cfg.commit_sign = chosen & 1 != 0;
+            cfg.tag_sign = chosen & 2 != 0;
+            cfg.push_sign = chosen & 4 != 0;
+            apply_signing_config(&["--file", file], &cfg).unwrap();
+
+            for (i, (key, value)) in keys.iter().enumerate() {
+                let expected = if chosen & (1 << i) != 0 {
+                    *value
+                } else {
+                    "user-choice"
+                };
+                assert_eq!(
+                    config_get(Path::new(file), key).as_deref(),
+                    Some(expected),
+                    "{key} with {cfg:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
     fn apply_signing_config_writes_values_starting_with_a_dash() {
         let temp_dir = TempDir::new().unwrap();
         let file = temp_dir.path().join("config");
@@ -226,6 +272,19 @@ mod tests {
             user_email: "batman@dc.com".to_string(),
             key_id: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
             commit_sign: true,
+            tag_sign: true,
+            push_sign: false,
+        };
+        insta::assert_snapshot!(cfg.to_string());
+    }
+
+    #[test]
+    fn display_signing_config_with_tag_sign_only() {
+        let cfg = SigningConfig {
+            user_name: "batman".to_string(),
+            user_email: "batman@dc.com".to_string(),
+            key_id: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
+            commit_sign: false,
             tag_sign: true,
             push_sign: false,
         };

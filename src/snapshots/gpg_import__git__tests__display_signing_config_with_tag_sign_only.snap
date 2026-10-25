@@ -1,0 +1,8 @@
+---
+source: src/git.rs
+expression: cfg.to_string()
+---
+user.name:       batman
+user.email:      batman@dc.com
+user.signingKey: BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127
+tag.gpgsign:     true

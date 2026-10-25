@@ -14,6 +14,9 @@ pub struct GpgImport {
     git_committer_email: Option<String>,
     dry_run: bool,
     skip_verify: bool,
+    sign_commits: bool,
+    sign_tags: bool,
+    sign_pushes: bool,
 }
 
 impl GpgImport {
@@ -31,6 +34,9 @@ impl GpgImport {
             git_committer_email: None,
             dry_run: false,
             skip_verify: false,
+            sign_commits: true,
+            sign_tags: true,
+            sign_pushes: true,
         }
     }
 
@@ -85,6 +91,24 @@ impl GpgImport {
     /// Enable dry-run mode (preview without making changes).
     pub fn dry_run(mut self, enabled: bool) -> Self {
         self.dry_run = enabled;
+        self
+    }
+
+    /// Sign commits (commit.gpgsign). When off, the setting is left untouched.
+    pub fn sign_commits(mut self, enabled: bool) -> Self {
+        self.sign_commits = enabled;
+        self
+    }
+
+    /// Sign tags (tag.gpgsign). When off, the setting is left untouched.
+    pub fn sign_tags(mut self, enabled: bool) -> Self {
+        self.sign_tags = enabled;
+        self
+    }
+
+    /// Sign pushes (push.gpgsign). When off, the setting is left untouched.
+    pub fn sign_pushes(mut self, enabled: bool) -> Self {
+        self.sign_pushes = enabled;
         self
     }
 
@@ -224,9 +248,9 @@ impl GpgImport {
                 .unwrap_or_else(|| primary_uid.name.clone()),
             user_email,
             key_id: signing_key,
-            commit_sign: true,
-            tag_sign: true,
-            push_sign: true,
+            commit_sign: self.sign_commits,
+            tag_sign: self.sign_tags,
+            push_sign: self.sign_pushes,
         };
 
         self.apply_git_config(&git_cfg)?;
