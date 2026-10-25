@@ -23,6 +23,9 @@ Examples:
   # `gpg --list-secret-keys --with-subkey-fingerprints` and pick one marked [S]
   $ gpg-import --fingerprint "$SUBKEY_FINGERPRINT"
 
+  # Turn on tag signing, leaving commit and push signing as they are
+  $ gpg-import --sign tags
+
   # Use a different committer identity from the one in the key
   $ gpg-import --git-committer-name "Bruce Wayne" --git-committer-email "bruce@wayne.enterprises"
 
@@ -93,6 +96,17 @@ Options:
           Skip the test signature that proves the imported key can sign
           
           [env: GPG_SKIP_VERIFY=]
+
+      --sign <OPERATIONS>
+          The git operations to sign, comma separated. Settings for the others are left as they are
+
+          Possible values:
+          - commits: commit.gpgsign
+          - tags:    tag.gpgsign
+          - pushes:  push.gpgsign (if-asked)
+          
+          [env: GPG_SIGN=]
+          [default: commits,tags,pushes]
 
   -h, --help
           Print help (see a summary with '-h')

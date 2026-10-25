@@ -4,6 +4,7 @@
 ![Rust](https://img.shields.io/badge/Rust-CE412B?logo=rust&logoColor=white)
 [![MIT](https://img.shields.io/badge/MIT-gray?logo=github&logoColor=white)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/purpleclay/gpg-import/badge)](https://scorecard.dev/viewer/?uri=github.com/purpleclay/gpg-import)
+[![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 
 Import and configure GPG signing for git. Runs on Linux and macOS.
 
@@ -15,7 +16,7 @@ Import and configure GPG signing for git. Runs on Linux and macOS.
 - Import GPG keys in ASCII armored format (_optionally base64 encoded for CI environments_).
 - Read the key and passphrase from an environment variable, stdin or a file, keeping them off the command line.
 - Preset the passphrase in the GPG agent for the primary key and every subkey, for non-interactive signing.
-- Configure local or global git signing for commits, tags and pushes.
+- Configure local or global git signing for commits, tags and pushes, or only the ones you choose with `--sign`. Settings for the rest are left alone.
 - Select a specific key or subkey for signing by fingerprint. GPG then signs with exactly that key, not the newest signing subkey.
 - Set key trust level.
 - Refuse an expired primary key or selected subkey, and flag unused expired subkeys in the output.

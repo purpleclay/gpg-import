@@ -24,6 +24,9 @@ const EXAMPLES: &str = "  # Import the key in GPG_PRIVATE_KEY and preset the pas
   # `gpg --list-secret-keys --with-subkey-fingerprints` and pick one marked [S]
   $ gpg-import --fingerprint \"$SUBKEY_FINGERPRINT\"
 
+  # Turn on tag signing, leaving commit and push signing as they are
+  $ gpg-import --sign tags
+
   # Use a different committer identity from the one in the key
   $ gpg-import --git-committer-name \"Bruce Wayne\" --git-committer-email \"bruce@wayne.enterprises\"
 
@@ -106,6 +109,18 @@ struct Args {
     /// Skip the test signature that proves the imported key can sign
     #[arg(long, env = "GPG_SKIP_VERIFY", value_parser = FalseyValueParser::new())]
     skip_verify: bool,
+
+    /// The git operations to sign, comma separated. Settings for the others
+    /// are left as they are
+    #[arg(
+        long,
+        env = "GPG_SIGN",
+        value_enum,
+        value_delimiter = ',',
+        default_value = "commits,tags,pushes",
+        value_name = "OPERATIONS"
+    )]
+    sign: Vec<SignOperation>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -116,6 +131,17 @@ enum Commands {
         #[arg(short, long)]
         short: bool,
     },
+}
+
+/// A git operation that can be signed
+#[derive(Clone, Debug, PartialEq, ValueEnum)]
+enum SignOperation {
+    /// commit.gpgsign
+    Commits,
+    /// tag.gpgsign
+    Tags,
+    /// push.gpgsign (if-asked)
+    Pushes,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -201,6 +227,9 @@ fn main() -> Result<()> {
         .with_git_committer_email(args.git_committer_email)
         .dry_run(args.dry_run)
         .skip_verify(args.skip_verify)
+        .sign_commits(args.sign.contains(&SignOperation::Commits))
+        .sign_tags(args.sign.contains(&SignOperation::Tags))
+        .sign_pushes(args.sign.contains(&SignOperation::Pushes))
         .import()
 }
 
@@ -273,5 +302,34 @@ mod tests {
             let args = parse_with_env(var, Some("0"), &[flag]);
             assert!(get(&args), "{flag} with {var}=0");
         }
+    }
+
+    #[test]
+    #[serial]
+    fn sign_selects_operations_from_the_flag_or_env_var() {
+        use SignOperation::*;
+        let cases: [(Option<&str>, &[&str], &[SignOperation]); 5] = [
+            (None, &[], &[Commits, Tags, Pushes]),
+            (None, &["--sign", "tags"], &[Tags]),
+            (None, &["--sign", "commits,tags"], &[Commits, Tags]),
+            (Some("pushes"), &[], &[Pushes]),
+            (Some("pushes"), &["--sign", "commits"], &[Commits]),
+        ];
+
+        for (value, cli, expected) in cases {
+            let args = parse_with_env("GPG_SIGN", value, cli);
+            assert_eq!(args.sign, expected, "GPG_SIGN={value:?} {cli:?}");
+        }
+    }
+
+    #[test]
+    fn sign_rejects_unknown_operations_listing_the_valid_ones() {
+        let err = Args::try_parse_from(["gpg-import", "--sign", "commits,merges"]).unwrap_err();
+
+        let message = err.to_string();
+        assert!(
+            message.contains("[possible values: commits, tags, pushes]"),
+            "{message}"
+        );
     }
 }
