@@ -232,20 +232,24 @@ impl GpgImport {
         }
 
         let signing_key = self.resolve_signing_key(private_key)?;
-        let primary_uid = private_key.primary_uid();
-        let user_email = self
-            .git_committer_email
-            .clone()
-            .unwrap_or_else(|| primary_uid.email.clone());
+        let (user_name, user_email, matches_uid) = self.committer_identity(private_key);
         if user_email.trim().is_empty() {
             bail!("primary GPG UID has no email; provide a Git committer email override");
         }
+        if !matches_uid {
+            let uids: Vec<String> = private_key
+                .uids
+                .iter()
+                .map(|uid| format!("{} <{}>", uid.name, uid.email))
+                .collect();
+            eprintln!(
+                "warning: {user_email} matches no uid on the key, so GitHub will show its commits as Unverified. The key's uids: {}",
+                uids.join(", ")
+            );
+        }
 
         let git_cfg = git::SigningConfig {
-            user_name: self
-                .git_committer_name
-                .clone()
-                .unwrap_or_else(|| primary_uid.name.clone()),
+            user_name,
             user_email,
             key_id: signing_key,
             commit_sign: self.sign_commits,
@@ -257,6 +261,31 @@ impl GpgImport {
         println!("{git_cfg}");
 
         Ok(())
+    }
+
+    /// Returns the committer name and email, and whether the email belongs to
+    /// a uid on the key. A committer email matching a uid, ignoring case,
+    /// selects that uid; otherwise the first uid supplies the name. An email
+    /// matching no uid is still used, as a bot or noreply address can be
+    /// deliberate
+    fn committer_identity(&self, private_key: &gpg::GpgPrivateKey) -> (String, String, bool) {
+        let primary_uid = private_key.primary_uid();
+        let (uid, email, matches_uid) = match &self.git_committer_email {
+            None => (primary_uid, primary_uid.email.clone(), true),
+            Some(email) => match private_key
+                .uids
+                .iter()
+                .find(|uid| uid.email.to_lowercase() == email.to_lowercase())
+            {
+                Some(uid) => (uid, uid.email.clone(), true),
+                None => (primary_uid, email.clone(), false),
+            },
+        };
+        let name = self
+            .git_committer_name
+            .clone()
+            .unwrap_or_else(|| uid.name.clone());
+        (name, email, matches_uid)
     }
 
     /// With `--fingerprint`, returns it suffixed with `!` so GPG signs with
@@ -375,6 +404,71 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    /// A key whose first uid is batman and second is robin
+    fn two_uid_key() -> GpgPrivateKey {
+        let mut key = test_key("batman@dc.com", &[]);
+        key.uids.push(GpgUid {
+            name: "robin".to_string(),
+            email: "robin@dc.com".to_string(),
+        });
+        key
+    }
+
+    #[test]
+    fn committer_identity_defaults_to_the_first_uid() {
+        let import = GpgImport::new("irrelevant".to_string());
+
+        assert_eq!(
+            import.committer_identity(&two_uid_key()),
+            ("batman".to_string(), "batman@dc.com".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn committer_identity_uses_the_uid_matching_the_committer_email() {
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_git_committer_email(Some("robin@dc.com".to_string()));
+
+        assert_eq!(
+            import.committer_identity(&two_uid_key()),
+            ("robin".to_string(), "robin@dc.com".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn committer_identity_matches_the_email_ignoring_case() {
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_git_committer_email(Some("Robin@DC.com".to_string()));
+
+        assert_eq!(
+            import.committer_identity(&two_uid_key()),
+            ("robin".to_string(), "robin@dc.com".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn committer_identity_keeps_the_committer_name_override() {
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_git_committer_name(Some("Dick Grayson".to_string()))
+            .with_git_committer_email(Some("robin@dc.com".to_string()));
+
+        assert_eq!(
+            import.committer_identity(&two_uid_key()),
+            ("Dick Grayson".to_string(), "robin@dc.com".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn committer_identity_keeps_an_email_matching_no_uid() {
+        let import = GpgImport::new("irrelevant".to_string())
+            .with_git_committer_email(Some("bot@dc.com".to_string()));
+
+        assert_eq!(
+            import.committer_identity(&two_uid_key()),
+            ("batman".to_string(), "bot@dc.com".to_string(), false)
+        );
     }
 
     #[test]

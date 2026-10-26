@@ -98,7 +98,8 @@ struct Args {
     #[arg(long, env = "GPG_GIT_COMMITTER_NAME", value_name = "NAME")]
     git_committer_name: Option<String>,
 
-    /// Override the committer email instead of using the value from the GPG key
+    /// Override the committer email. If it matches another uid on the GPG key,
+    /// that uid's name is used too
     #[arg(long, env = "GPG_GIT_COMMITTER_EMAIL", value_name = "EMAIL")]
     git_committer_email: Option<String>,
 
