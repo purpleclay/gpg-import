@@ -220,8 +220,8 @@ pub struct GpgPrivateKey {
     /// The user identities associated with the private key; the first is
     /// used as the default git identity
     pub uids: Vec<GpgUid>,
-    /// Internal details of the secret key
-    pub secret_key: GpgKeyDetails,
+    /// Internal details of the primary key
+    pub primary_key: GpgKeyDetails,
     /// Internal details of the secret subkeys (0..N)
     pub subkeys: Vec<GpgKeyDetails>,
 }
@@ -305,16 +305,16 @@ impl Display for GpgPrivateKey {
                 writeln!(f, "user:           {} <{}>", uid.name, uid.email)?;
             }
         }
-        writeln!(f, "fingerprint:    {}", self.secret_key.fingerprint)?;
-        writeln!(f, "keygrip:        {}", self.secret_key.keygrip)?;
-        writeln!(f, "key_id:         {}", self.secret_key.key_id)?;
+        writeln!(f, "fingerprint:    {}", self.primary_key.fingerprint)?;
+        writeln!(f, "keygrip:        {}", self.primary_key.keygrip)?;
+        writeln!(f, "key_id:         {}", self.primary_key.key_id)?;
         writeln!(
             f,
             "created_on:     {}",
-            format_timestamp(self.secret_key.creation_date)
+            format_timestamp(self.primary_key.creation_date)
         )?;
 
-        if let Some(expiration_date) = self.secret_key.expiration_date {
+        if let Some(expiration_date) = self.primary_key.expiration_date {
             writeln!(
                 f,
                 "expires_on:     {}",
@@ -434,7 +434,7 @@ mod colon_field {
 /// leading record tag, so a `uid` value containing text that happens to
 /// match another tag (e.g. `ssb`) cannot derail parsing.
 fn parse_gpg_key_details(input: &str) -> Result<GpgPrivateKey, GpgError> {
-    let mut secret_key: Option<GpgKeyDetails> = None;
+    let mut primary_key: Option<GpgKeyDetails> = None;
     let mut subkeys: Vec<GpgKeyDetails> = Vec::new();
     let mut uids: Vec<GpgUid> = Vec::new();
 
@@ -473,17 +473,17 @@ fn parse_gpg_key_details(input: &str) -> Result<GpgPrivateKey, GpgError> {
                 };
 
                 if fields[0] == "sec" {
-                    secret_key = Some(details);
+                    primary_key = Some(details);
                 } else {
                     subkeys.push(details);
                 }
             }
             "fpr" => {
-                current_key(&mut secret_key, &mut subkeys, line_no, line)?.fingerprint =
+                current_key(&mut primary_key, &mut subkeys, line_no, line)?.fingerprint =
                     field(&fields, colon_field::RECORD_VALUE, line_no, line)?.to_string();
             }
             "grp" => {
-                current_key(&mut secret_key, &mut subkeys, line_no, line)?.keygrip =
+                current_key(&mut primary_key, &mut subkeys, line_no, line)?.keygrip =
                     field(&fields, colon_field::RECORD_VALUE, line_no, line)?.to_string();
             }
             "uid" => {
@@ -497,22 +497,22 @@ fn parse_gpg_key_details(input: &str) -> Result<GpgPrivateKey, GpgError> {
         }
     }
 
-    let secret_key =
-        secret_key.ok_or_else(|| GpgError::InvalidGpgKeyData("missing sec record".to_string()))?;
+    let primary_key =
+        primary_key.ok_or_else(|| GpgError::InvalidGpgKeyData("missing sec record".to_string()))?;
     if uids.is_empty() {
         return Err(GpgError::InvalidGpgKeyData(
             "missing uid record".to_string(),
         ));
     }
 
-    validate_key_details(&secret_key, "primary key")?;
+    validate_key_details(&primary_key, "primary key")?;
     for (i, subkey) in subkeys.iter().enumerate() {
         validate_key_details(subkey, &format!("subkey {}", i + 1))?;
     }
 
     Ok(GpgPrivateKey {
         uids,
-        secret_key,
+        primary_key,
         subkeys,
     })
 }
@@ -533,14 +533,14 @@ fn validate_key_details(details: &GpgKeyDetails, label: &str) -> Result<(), GpgE
 /// Returns the key details that a following `fpr`/`grp` record applies to:
 /// the most recently opened subkey, falling back to the primary key.
 fn current_key<'a>(
-    secret_key: &'a mut Option<GpgKeyDetails>,
+    primary_key: &'a mut Option<GpgKeyDetails>,
     subkeys: &'a mut [GpgKeyDetails],
     line_no: usize,
     line: &str,
 ) -> Result<&'a mut GpgKeyDetails, GpgError> {
     subkeys
         .last_mut()
-        .or(secret_key.as_mut())
+        .or(primary_key.as_mut())
         .ok_or_else(|| GpgError::MalformedKeyRecord(line_no + 1, line.to_string()))
 }
 
@@ -787,7 +787,7 @@ pub fn extract_key_info(key_id: &str) -> Result<GpgPrivateKey> {
     let key_details = output.parse::<GpgPrivateKey>()?;
 
     let current_timestamp = Utc::now().timestamp();
-    if let Some(expiration_date) = key_details.secret_key.expiration_date
+    if let Some(expiration_date) = key_details.primary_key.expiration_date
         && expiration_date <= current_timestamp
     {
         bail!(
@@ -1208,7 +1208,7 @@ Home: /Users/user/.gnupg";
                 name: "batman".to_string(),
                 email: "batman@dc.com".to_string(),
             }],
-            secret_key: GpgKeyDetails {
+            primary_key: GpgKeyDetails {
                 creation_date: 1700000000,
                 expiration_date: None,
                 fingerprint: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
@@ -1242,7 +1242,7 @@ Home: /Users/user/.gnupg";
                 name: "batman".to_string(),
                 email: String::new(),
             }],
-            secret_key: GpgKeyDetails {
+            primary_key: GpgKeyDetails {
                 creation_date: 1700000000,
                 expiration_date: None,
                 fingerprint: "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127".to_string(),
@@ -1301,23 +1301,23 @@ grp:::::::::4AC8E7E7FD8B405DF2761726D296F98C9B778875:",
         assert_eq!(key.uids.len(), 1);
         assert_eq!(key.primary_uid().name, "batman");
         assert_eq!(key.primary_uid().email, "batman@dc.com");
-        assert_eq!(key.secret_key.creation_date, now.timestamp());
+        assert_eq!(key.primary_key.creation_date, now.timestamp());
         assert_eq!(
-            key.secret_key.expiration_date,
+            key.primary_key.expiration_date,
             Some(secret_key_expiration.timestamp())
         );
         assert_eq!(
-            key.secret_key.fingerprint,
+            key.primary_key.fingerprint,
             "BEEA4CDB4B0A80CBABB99B45FDEFE8AB8796E127"
         );
-        assert_eq!(key.secret_key.key_id, "FDEFE8AB8796E127");
+        assert_eq!(key.primary_key.key_id, "FDEFE8AB8796E127");
         assert_eq!(
-            key.secret_key.keygrip,
+            key.primary_key.keygrip,
             "C4403DA4AF911084480BA46743E707CCDD082A24"
         );
-        assert!(key.secret_key.capabilities.sign);
-        assert!(key.secret_key.capabilities.certify);
-        assert!(!key.secret_key.capabilities.encrypt);
+        assert!(key.primary_key.capabilities.sign);
+        assert!(key.primary_key.capabilities.certify);
+        assert!(!key.primary_key.capabilities.encrypt);
 
         assert_eq!(key.subkeys.len(), 1);
         let subkey = &key.subkeys[0];

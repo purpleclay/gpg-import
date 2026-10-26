@@ -169,7 +169,7 @@ impl GpgImport {
         let passphrase_cleaned = passphrase.trim();
 
         if !self.dry_run {
-            gpg::preset_passphrase(&private_key.secret_key.keygrip, passphrase_cleaned)?;
+            gpg::preset_passphrase(&private_key.primary_key.keygrip, passphrase_cleaned)?;
             for subkey in &private_key.subkeys {
                 gpg::preset_passphrase(&subkey.keygrip, passphrase_cleaned)?;
             }
@@ -178,7 +178,7 @@ impl GpgImport {
         println!("> Setting Passphrase:");
         println!(
             "keygrip: {} [{}]",
-            private_key.secret_key.keygrip, private_key.secret_key.key_id
+            private_key.primary_key.keygrip, private_key.primary_key.key_id
         );
         for subkey in &private_key.subkeys {
             println!("keygrip: {} [{}]", subkey.keygrip, subkey.key_id);
@@ -193,13 +193,13 @@ impl GpgImport {
         };
 
         if !self.dry_run {
-            gpg::assign_trust_level(&private_key.secret_key.key_id, trust_level)?;
+            gpg::assign_trust_level(&private_key.primary_key.key_id, trust_level)?;
         }
 
         println!("\n> Setting Trust Level:");
         println!(
             "trust_level: {} [{}]",
-            trust_level, private_key.secret_key.key_id
+            trust_level, private_key.primary_key.key_id
         );
 
         Ok(())
@@ -295,10 +295,10 @@ impl GpgImport {
     /// exactly that key or subkey rather than the newest signing-capable one.
     fn resolve_signing_key(&self, private_key: &gpg::GpgPrivateKey) -> Result<String> {
         let Some(fp) = &self.fingerprint else {
-            return Ok(private_key.secret_key.fingerprint.clone());
+            return Ok(private_key.primary_key.fingerprint.clone());
         };
 
-        let Some(key) = std::iter::once(&private_key.secret_key)
+        let Some(key) = std::iter::once(&private_key.primary_key)
             .chain(&private_key.subkeys)
             .find(|key| &key.fingerprint == fp)
         else {
@@ -379,7 +379,7 @@ mod tests {
                 name: "batman".to_string(),
                 email: email.to_string(),
             }],
-            secret_key: GpgKeyDetails {
+            primary_key: GpgKeyDetails {
                 creation_date: 0,
                 expiration_date: None,
                 fingerprint: "PRIMARYFPR".to_string(),

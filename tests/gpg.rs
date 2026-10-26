@@ -353,7 +353,7 @@ Name-Email: robin@dc.com
     );
     assert_eq!(key_info.primary_uid().name, "robin");
 
-    let sign_result = fixture.create_and_sign_file(&key_info.secret_key.fingerprint);
+    let sign_result = fixture.create_and_sign_file(&key_info.primary_key.fingerprint);
     assert!(
         sign_result.is_ok(),
         "Sign-only key should still be able to sign"
@@ -464,7 +464,7 @@ Passphrase: {passphrase}
     assert!(fixture.kill_agent().is_ok(), "Failed to kill gpg-agent");
 
     // Mirrors GpgImport::configure_gpg_passphrase: preset primary + every subkey.
-    assert!(gpg::preset_passphrase(&key_info.secret_key.keygrip, passphrase).is_ok());
+    assert!(gpg::preset_passphrase(&key_info.primary_key.keygrip, passphrase).is_ok());
     for subkey in &key_info.subkeys {
         assert!(
             gpg::preset_passphrase(&subkey.keygrip, passphrase).is_ok(),
@@ -595,7 +595,7 @@ fn assign_trust_level() {
     assert!(key_info.is_ok(), "Failed to extract key info");
 
     let key_info = key_info.unwrap();
-    let result = gpg::assign_trust_level(&key_info.secret_key.key_id, 5);
+    let result = gpg::assign_trust_level(&key_info.primary_key.key_id, 5);
     assert!(result.is_ok(), "Failed to assign trust level");
 
     // Ownertrust is stored as the trust level plus one, so ultimate (5) is 6
@@ -603,7 +603,7 @@ fn assign_trust_level() {
         .arg("--export-ownertrust")
         .output()
         .expect("Failed to export ownertrust");
-    let expected = format!("{}:6:", key_info.secret_key.fingerprint);
+    let expected = format!("{}:6:", key_info.primary_key.fingerprint);
     assert!(
         String::from_utf8_lossy(&ownertrust.stdout)
             .lines()
@@ -622,9 +622,9 @@ fn preview_key_base64() {
     let key = result.unwrap();
     assert_eq!(key.primary_uid().name, "batman");
     assert_eq!(key.primary_uid().email, "batman@dc.com");
-    assert!(!key.secret_key.fingerprint.is_empty());
-    assert!(!key.secret_key.key_id.is_empty());
-    assert!(!key.secret_key.keygrip.is_empty());
+    assert!(!key.primary_key.fingerprint.is_empty());
+    assert!(!key.primary_key.key_id.is_empty());
+    assert!(!key.primary_key.keygrip.is_empty());
     assert_eq!(key.subkeys.len(), 1);
     assert!(!key.subkeys[0].key_id.is_empty());
     assert!(!key.subkeys[0].keygrip.is_empty());
@@ -798,9 +798,9 @@ fn preview_key_ascii_armored() {
     let key = result.unwrap();
     assert_eq!(key.primary_uid().name, "batman");
     assert_eq!(key.primary_uid().email, "batman@dc.com");
-    assert!(!key.secret_key.fingerprint.is_empty());
-    assert!(!key.secret_key.key_id.is_empty());
-    assert!(!key.secret_key.keygrip.is_empty());
+    assert!(!key.primary_key.fingerprint.is_empty());
+    assert!(!key.primary_key.key_id.is_empty());
+    assert!(!key.primary_key.keygrip.is_empty());
     assert_eq!(key.subkeys.len(), 1);
     assert!(!key.subkeys[0].key_id.is_empty());
     assert!(!key.subkeys[0].keygrip.is_empty());
