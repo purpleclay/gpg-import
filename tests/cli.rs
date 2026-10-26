@@ -143,6 +143,36 @@ fn dry_run_reports_what_would_change() {
 
 #[test]
 #[serial]
+fn outside_a_repository_reports_git_config_skipped() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+    let outside = tempfile::TempDir::new().unwrap();
+
+    let key = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/testdata/no-passphrase.asc"
+    );
+    let output = gpg_import_command()
+        .args(["--dry-run", "--key", &format!("@{key}")])
+        .current_dir(outside.path())
+        .output()
+        .expect("Failed to run gpg-import");
+
+    assert!(
+        output.status.success(),
+        "gpg-import failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(
+            "> Git config skipped: not inside a git repository (use --git-global-config or run from a repo)"
+        ),
+        "{stdout}"
+    );
+}
+
+#[test]
+#[serial]
 fn committer_email_matching_no_uid_warns_with_the_uids() {
     let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
 
