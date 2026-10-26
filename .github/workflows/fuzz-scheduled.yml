@@ -13,8 +13,8 @@ concurrency:
 permissions: {}
 
 jobs:
-  cflite_batch:
-    name: cflite_batch
+  scheduled_fuzz:
+    name: scheduled_fuzz
     runs-on: ubuntu-26.04
     timeout-minutes: 90
     permissions:
@@ -52,9 +52,9 @@ jobs:
           checkout_path: cifuzz-sarif
           category: clusterfuzzlite
 
-  cflite_prune:
-    name: cflite_prune
-    needs: cflite_batch
+  fuzz_prune:
+    name: fuzz_prune
+    needs: scheduled_fuzz
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:

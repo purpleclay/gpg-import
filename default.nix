@@ -20,7 +20,7 @@ rustPlatform.buildRustPackage {
   meta = with lib; {
     homepage = "https://github.com/purpleclay/gpg-import";
     changelog = "https://github.com/purpleclay/gpg-import/releases/tag/${version}";
-    description = "Easily import a GPG key within any CI workflow";
+    description = "Import a GPG key and configure git commit and tag signing, non-interactively, for CI and workstations";
     license = licenses.mit;
     maintainers = with maintainers; [purpleclay];
   };

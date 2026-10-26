@@ -6,7 +6,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/purpleclay/gpg-import/badge)](https://scorecard.dev/viewer/?uri=github.com/purpleclay/gpg-import)
 [![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 
-Import and configure GPG signing for git. Runs on Linux and macOS.
+Import a GPG key and configure git commit and tag signing, non-interactively, for CI and workstations. Runs on Linux and macOS.
 
 > [!IMPORTANT]
 > Requires GnuPG (`gpg` and `gpg-connect-agent`) on your `$PATH`. `git` is optional, and only needed to configure signing.
@@ -56,9 +56,14 @@ gpg --armor --export-secret-key batman@dc.com
 gpg --armor --export-secret-key batman@dc.com | base64
 ```
 
-Export one key per run. If the input holds more than one key, public or secret, `gpg-import` fails and lists their fingerprints. gpg will already have imported them into the keyring by then.
+Export one key per run. If the input contains more than one key, public or secret, `gpg-import` lists their fingerprints and fails. By then, gpg has already added them all to the keyring.
 
-The key's first uid supplies the git identity (`user.name` and `user.email`). Use `--git-committer-name` and `--git-committer-email` to override it.
+### Choosing the git identity
+
+By default, git's `user.name` and `user.email` come from the key's first uid. To commit as another uid on the key, pass its email with `--git-committer-email`, and its name is used as well. `--git-committer-name` sets the name, whichever email you pass.
+
+> [!NOTE]
+> GitHub only shows a signed commit as Verified when the committer email matches one of the key's uids. `gpg-import` still accepts an email that isn't on the key, such as a bot or noreply address, but prints a warning listing the key's uids.
 
 ## Quick start
 

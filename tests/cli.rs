@@ -143,6 +143,43 @@ fn dry_run_reports_what_would_change() {
 
 #[test]
 #[serial]
+fn committer_email_matching_no_uid_warns_with_the_uids() {
+    let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
+
+    let key = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/testdata/no-passphrase.asc"
+    );
+    let output = gpg_import_command()
+        .args([
+            "--dry-run",
+            "--git-global-config",
+            "--git-committer-email",
+            "bot@dc.com",
+            "--key",
+            &format!("@{key}"),
+        ])
+        .output()
+        .expect("Failed to run gpg-import");
+
+    assert!(
+        output.status.success(),
+        "gpg-import failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "warning: bot@dc.com matches no uid on the key, so GitHub will show its commits as Unverified. The key's uids: batman <batman@dc.com>"
+        ),
+        "{stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("user.email:      bot@dc.com"), "{stdout}");
+}
+
+#[test]
+#[serial]
 fn import_verifies_the_key_can_sign() {
     let _fixture = GpgTestFixture::new().expect("Failed to create GPG test fixture");
 

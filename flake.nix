@@ -1,5 +1,5 @@
 {
-  description = "Easily import a GPG key within any CI workflow";
+  description = "Import a GPG key and configure git commit and tag signing, non-interactively, for CI and workstations";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";

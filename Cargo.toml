@@ -1,6 +1,6 @@
 [package]
 authors = ["Purple Clay <purpleclaygh@gmail.com>"]
-description = "Import and configure GPG signing for git"
+description = "Import a GPG key and configure git commit and tag signing, non-interactively, for CI and workstations"
 name = "gpg-import"
 edition = "2024"
 license = "MIT"

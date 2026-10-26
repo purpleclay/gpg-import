@@ -2,7 +2,7 @@
 source: tests/cli.rs
 expression: "String::from_utf8_lossy(&output.stdout)"
 ---
-Import and configure GPG signing for git
+Import a GPG key and configure git commit and tag signing, non-interactively, for CI and workstations
 
 Usage: gpg-import [OPTIONS] [COMMAND]
 
@@ -83,7 +83,7 @@ Options:
           [env: GPG_GIT_COMMITTER_NAME=]
 
       --git-committer-email <EMAIL>
-          Override the committer email instead of using the value from the GPG key
+          Override the committer email. If it matches another uid on the GPG key, that uid's name is used too
           
           [env: GPG_GIT_COMMITTER_EMAIL=]
 
