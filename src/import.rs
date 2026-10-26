@@ -228,6 +228,9 @@ impl GpgImport {
         }
 
         if !self.git_global_config && !git::is_repo()? {
+            println!(
+                "\n> Git config skipped: not inside a git repository (use --git-global-config or run from a repo)"
+            );
             return Ok(());
         }
 
